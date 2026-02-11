@@ -1,0 +1,137 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+<h2>Edit Question: <code>{{ key }}</code></h2>
+
+<div class="row my-3">
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h4>French ({%if fr.review is defined %}✔️ reviewed by {{fr.review}}{% else %}⚠️ not reviewed{% endif %})</h4></div>
+            {# TODO: Move to separate file #}
+            <div class="card-body">
+                <p class="card-text">{{ diff.question | render_diff | safe}}</p>
+                {% if fr.picture_question is not none %}
+                <img class="d-block mx-auto" src="https://50ohm.uska.online/images_fr/{{fr.picture_question}}.svg">
+                {% endif %}
+                <fieldset>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qf.0" name="qf" value="0" disabled checked>
+                        <label for="qf.0">{{ diff.answer_a | render_diff | safe }}</label>
+                        {% if fr.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_fr/{{fr.picture_a}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qf.1" name="qf" value="1" disabled>
+                        <label for="qf.1">{{ diff.answer_b | render_diff | safe }}</label>
+                        {% if fr.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_fr/{{fr.picture_b}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qf.2" name="qf" value="2" disabled>
+                        <label for="qf.2">{{ diff.answer_c | render_diff | safe }}</label>
+                        {% if fr.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_fr/{{fr.picture_c}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qf.3" name="qf" value="3" disabled>
+                        <label for="qf.3">{{ diff.answer_d | render_diff |safe }}</label>
+                        {% if fr.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_fr/{{fr.picture_d}}.svg">
+                        {% endif %}
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+    </div>
+    <div class="col-md-6">
+        <div class="card">
+            <div class="card-header"><h4>German</h4></div>
+            <div class="card-body">
+                <p class="card-text">{{ de.question }}</p>
+                {% if de.picture_question is not none %}
+                <img class="d-block mx-auto" src="https://50ohm.uska.online/images_de/{{de.picture_question}}.svg">
+                {% endif %}
+                <fieldset>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qg.0" name="qg" value="0" disabled checked>
+                        <label for="qg.0">{{ de.answer_a or '' }}</label>
+                        {% if de.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_de/{{de.picture_a}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qg.1" name="qg" value="1" disabled>
+                        <label for="qg.1">{{ de.answer_b or '' }}</label>
+                        {% if de.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_de/{{de.picture_b}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qg.2" name="qg" value="2" disabled>
+                        <label for="qg.2">{{ de.answer_c or '' }}</label>
+                        {% if de.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_de/{{de.picture_c}}.svg">
+                        {% endif %}
+                    </div>
+                    <div class="form-check d-flex align-items-start mb-3">
+                        <input class="me-2 mt-1" type="radio" id="qg.3" name="qg" value="3" disabled>
+                        <label for="qg.3">{{ de.answer_d or '' }}</label>
+                        {% if de.picture_a is not none %}
+                        <img src="https://50ohm.uska.online/images_de/{{de.picture_d}}.svg">
+                        {% endif %}
+                    </div>
+                </fieldset>
+            </div>
+        </div>
+    </div>
+</div>
+
+<form action="/save/{{ key }}" method="post">
+    <div class="row my-3">
+        <div class="col-md-6">
+            <h4>Question</h4>
+            <input type="hidden" name="sha" value="{{ sha }}">
+            <div class="mb-3">
+                <textarea name="question" class="form-control" rows="10">{{ fr.question }}</textarea>
+            </div>
+        </div>
+
+        <div class="col-md-6">
+            <h4>Answers</h4>
+            <div class="mb-2">
+                <label>A (✔)</label>
+                <input name="answer_a" class="form-control" value="{{ fr.answer_a }}">
+            </div>
+
+            <div class="mb-2">
+                <label>B (❌)</label>
+                <input name="answer_b" class="form-control" value="{{ fr.answer_b }}">
+            </div>
+
+            <div class="mb-2">
+                <label>C (❌)</label>
+                <input name="answer_c" class="form-control" value="{{ fr.answer_c }}">
+            </div>
+
+            <div class="mb-2">
+                <label>D (❌)</label>
+                <input name="answer_d" class="form-control" value="{{ fr.answer_d }}">
+            </div>
+        </div>
+    </div>
+    <div class="row my-3">
+        <div class="col d-flex justify-content-center gap-2">
+            <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}" >Previous Section ←←</a>
+            <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}" >Previous Question ←</a>
+            <button class="btn btn-warning">Commit to repository / Approve review</button>
+            <a class="btn btn-primary {%if next_question is none %}disabled{%endif%}" role="button" href="/edit/{{next_question}}" >→ Next Question</a>
+            <a class="btn btn-primary {%if next_section is none %}disabled{%endif%}" role="button" href="/edit/{{next_section}}" >→→ Next Section</a>
+        </div>
+    </div>
+</form>
+
+{% endblock %}

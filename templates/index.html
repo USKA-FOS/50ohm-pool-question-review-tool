@@ -1,0 +1,44 @@
+{% extends "layout.html" %}
+
+{% block content %}
+
+{% if not logged_in %}
+    <h1>Please log in to access questions.</h1>
+{% else %}
+    <h4 class="mt-4">Table of Contents</h4>
+    <ol type="I">
+        {% for chapter in toc %}
+        <li>{{chapter.value}}</li>
+        <ol type="A">
+        {% for section in chapter.children %}
+            <li>{{section.value}}</li>
+            <ol>
+                {% for subsection in section.children %}
+                <li class="d-flex align-items-center">
+                <div class="progress mx-2" style="width:50px;">
+                    <div class="progress-bar bg-success" role="progressbar" style="width: {{subsection.progress}}%;" aria-valuenow="{{subsection.progress}}" aria-valuemin="0" aria-valuemax="100">
+                    </div>
+                </div>
+                <a href="/edit/{{subsection.children[0].value}}">{{subsection.value}}</a> ({{subsection.n_reviewed}}/{{subsection.children|count}} questions)
+                </li>
+                {% endfor %}
+            </ol>
+        {% endfor %}
+        </ol>
+        {% endfor %}
+    </ol>
+    <h4 class="mt-4">Edit by Question Key</h4>
+    <form action="/edit" method="get">
+        <label for="key">Enter question key:</label>
+        <input name="key" id="key" class="form-control" required>
+        <button class="btn btn-primary mt-2">Load</button>
+    </form>
+    {%if rate_limit_json is not none %}
+    <h4 class="mt-4">Rate Limits (Debug)</h4>
+    <pre class="bg-white border p-3" style="height: 200px; overflow: auto;">
+        {{ rate_limit_json | tojson(indent=2) }}
+    </pre>
+    {% endif %}
+{% endif %}
+
+{% endblock %}
