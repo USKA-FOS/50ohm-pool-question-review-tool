@@ -104,22 +104,22 @@
             <h4>Edit Answers:</h4>
             <div class="mb-2">
                 <label>A (✔)</label>
-                <input name="answer_a" class="form-control" value="{{ fr.answer_a }}">
+                <input name="answer_a" class="form-control" value="{{ fr.answer_a }}" {% if fr.answer_a is none or fr.answer_a == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>B (❌)</label>
-                <input name="answer_b" class="form-control" value="{{ fr.answer_b }}">
+                <input name="answer_b" class="form-control" value="{{ fr.answer_b }}" {% if fr.answer_b is none or fr.answer_b == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>C (❌)</label>
-                <input name="answer_c" class="form-control" value="{{ fr.answer_c }}">
+                <input name="answer_c" class="form-control" value="{{ fr.answer_c }}" {% if fr.answer_c is none or fr.answer_c == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>D (❌)</label>
-                <input name="answer_d" class="form-control" value="{{ fr.answer_d }}">
+                <input name="answer_d" class="form-control" value="{{ fr.answer_d }}"{% if fr.answer_d is none or fr.answer_d == '' %}disabled{% endif %}>
             </div>
         </div>
     </div>

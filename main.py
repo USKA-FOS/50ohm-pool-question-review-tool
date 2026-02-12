@@ -228,10 +228,10 @@ def save_question(
     key: str,
     sha: str = Form(...),
     question: str = Form(...),
-    answer_a: str = Form(...),
-    answer_b: str = Form(...),
-    answer_c: str = Form(...),
-    answer_d: str = Form(...),
+    answer_a: Optional[str] = Form(None),
+    answer_b: Optional[str] = Form(None),
+    answer_c: Optional[str] = Form(None),
+    answer_d: Optional[str] = Form(None),
     comment: Optional[str] = Form(None)
 ):
     token = get_token(request)
@@ -240,6 +240,8 @@ def save_question(
 
     # Prepare updated JSON
     data_fr_wip_json = fetch('WIP', key, token)['json']
+    # FIXME: Sometimes, the strings are not None but empty. The frontend should catch
+    # this but it would be better to also sanitize in the backend.
     if data_fr_wip_json['question'] is not None: data_fr_wip_json['question'] = question
     if data_fr_wip_json['answer_a'] is not None: data_fr_wip_json['answer_a'] = answer_a
     if data_fr_wip_json['answer_b'] is not None: data_fr_wip_json['answer_b'] = answer_b
