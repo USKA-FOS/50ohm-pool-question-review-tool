@@ -124,6 +124,24 @@
         </div>
     </div>
     <div class="row my-3">
+        <h4>Enter Review Comment (optional):</h4>
+        <div class="mb-2">
+            <input name="comment" class="form-control">
+        </div>
+    </div>
+    {% if fr['HB.comments'] is defined %}
+    <div class="row my-3">
+        <h4>Review Comments:</h4>
+        <div class="mb-2">
+            <ul>
+            {% for comment in fr['HB.comments'] %}
+            <li>{{comment}}</li>
+            {% endfor %}
+            </ul>
+        </div>
+    </div>
+    {% endif %}
+    <div class="row my-3">
         <div class="col d-flex justify-content-center gap-2">
             <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}" >Previous Section ←←</a>
             <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}" >Previous Question ←</a>
