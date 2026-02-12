@@ -103,7 +103,6 @@ def b64decode(data):
 def b64encode(data):
     return base64.b64encode(data.encode('utf-8')).decode()
 
-# FIXME: Catch 403 and 404 errors here
 def fetch(ref, key, token):
     path = f'questions/{key}.json'
     r = requests.get(
@@ -111,6 +110,7 @@ def fetch(ref, key, token):
         params={'ref': ref},
         headers=github_headers(token),
     )
+    r.raise_for_status()
     d = r.json()
     json_str = b64decode(d['content'])
     parsed = json.loads(json_str)
@@ -124,23 +124,28 @@ def fetch(ref, key, token):
 def index(request: Request):
     logged_in = bool(get_token(request))
     if logged_in:
-        # We need this to understand which questions have been reviewed already
-        # FIXME: This will break at some point -- implement pagination
-        r = requests.get(
-            f'https://api.github.com/repos/{OWNER}/{REPO}/compare/FR_orig_DeepL...WIP',
-            headers=github_headers(get_token(request)),
-        )
-        for file in r.json()['files']:
-            # We need to split the questions/ prefix and the .json suffix from the filename
-            # FIXME: Use pathlib for this?
-            contents.mark_reviewed(file['filename'].split('/')[-1].split('.')[0])
+        try:
+            # We need this to understand which questions have been reviewed already
+            # FIXME: This will break at some point -- implement pagination
+            r = requests.get(
+                f'https://api.github.com/repos/{OWNER}/{REPO}/compare/FR_orig_DeepL...WIP',
+                headers=github_headers(get_token(request)),
+            )
+            r.raise_for_status()
+            for file in r.json()['files']:
+                # We need to split the questions/ prefix and the .json suffix from the filename
+                # FIXME: Use pathlib for this?
+                contents.mark_reviewed(file['filename'].split('/')[-1].split('.')[0])
 
-        # Rate limit info will be prinated to understand whether we are about to have troubles
-        r = requests.get(
-            f'https://api.github.com/rate_limit',
-            headers=github_headers(get_token(request)),
-        )
-        limit_json = r.json()
+            # Rate limit info will be prinated to understand whether we are about to have troubles
+            r = requests.get(
+                f'https://api.github.com/rate_limit',
+                headers=github_headers(get_token(request)),
+            )
+            r.raise_for_status()
+            limit_json = r.json()
+        except requests.exceptions.HTTPError as e:
+            return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
         table_of_contents = contents.toc.children
     else:
@@ -201,9 +206,12 @@ def edit_question(request: Request, key: str):
     if not token:
         return RedirectResponse('/login')
 
-    data_de      = fetch('german_orig', key, token)
-    data_fr_orig = fetch('FR_orig_DeepL', key, token)
-    data_fr_wip  = fetch('WIP', key, token)
+    try:
+        data_de      = fetch('german_orig', key, token)
+        data_fr_orig = fetch('FR_orig_DeepL', key, token)
+        data_fr_wip  = fetch('WIP', key, token)
+    except requests.exceptions.HTTPError as e:
+        return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
     return templates.TemplateResponse(
         'editor.html',
