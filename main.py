@@ -247,15 +247,16 @@ def save_question(
     if data_fr_wip_json['answer_d'] is not None: data_fr_wip_json['answer_d'] = answer_d
     username = request.session['username']
     data_fr_wip_json['review'] = username
+    commit_message = f'Update {key} via web UI (edited by @{username})'
     if comment is not None:
         if 'HB.comments' not in data_fr_wip_json:
             data_fr_wip_json['HB.comments'] = []
         data_fr_wip_json['HB.comments'].append(f'{username}: {comment}')
+        commit_message += f'\n\n{comment}'
     encoded = b64encode(json.dumps(data_fr_wip_json, indent=4))
 
     # Commit
     path = f'questions/{key}.json'
-    commit_message = f'Update {key} via web UI (edited by @{username})'
 
     r = requests.put(
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
