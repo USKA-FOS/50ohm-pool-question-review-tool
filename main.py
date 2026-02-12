@@ -6,6 +6,7 @@ from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
+from typing import Optional
 
 from starlette.middleware.sessions import SessionMiddleware
 import difflib
@@ -230,7 +231,8 @@ def save_question(
     answer_a: str = Form(...),
     answer_b: str = Form(...),
     answer_c: str = Form(...),
-    answer_d: str = Form(...)
+    answer_d: str = Form(...),
+    comment: Optional[str] = Form(None)
 ):
     token = get_token(request)
     if not token:
@@ -245,6 +247,10 @@ def save_question(
     if data_fr_wip_json['answer_d'] is not None: data_fr_wip_json['answer_d'] = answer_d
     username = request.session['username']
     data_fr_wip_json['review'] = username
+    if comment is not None:
+        if 'HB.comments' not in data_fr_wip_json:
+            data_fr_wip_json['HB.comments'] = []
+        data_fr_wip_json['HB.comments'].append(f'{username}: {comment}')
     encoded = b64encode(json.dumps(data_fr_wip_json, indent=4))
 
     # Commit
