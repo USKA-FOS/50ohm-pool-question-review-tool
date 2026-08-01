@@ -147,19 +147,24 @@ run as a non-root user, and add automated dependency and container checks.
 
 The review tool should remain a client of `50ohm-question-pool`:
 
-1. select an immutable baseline commit/tag and an explicit candidate commit;
-2. load canonical metadata and localized payloads through a tested adapter;
+1. create each review campaign directly from an immutable canonical commit or
+   tag;
+2. copy only the selected canonical objects into a disposable sandbox WIP
+   branch;
 3. identify questions by stable `question_id`, displaying `internal_code` only
    as a reviewer-facing label;
-4. render German reference, French baseline, and French candidate without
-   modifying either source;
-5. record `approved`, `rejected`, or `to_be_reviewed` through the canonical
-   review-state contract;
-6. preserve reviewer identity, timestamp, source fingerprint, and comment in a
-   defined audit artifact or approved metadata schema;
-7. submit changes on a dedicated branch and pull request rather than pushing
-   directly to a shared WIP branch;
-8. let question-pool validation and rebuild tooling gate mergeability.
+4. keep question content in `question.<language>.json` and the durable current
+   status in `question.meta.json`;
+5. keep intermediate decisions and useful comments in a small, disposable
+   campaign history in the sandbox;
+6. import only approved results after confirming that their canonical source
+   content has not changed since the campaign baseline;
+7. omit sandbox history, reviewer names, and work comments from the canonical;
+8. let question-pool validation and rebuild tooling gate integration.
+
+The detailed data flow and the justification for each retained datum are
+defined in the
+[canonical/sandbox review workflow](CANONICAL_SANDBOX_REVIEW_WORKFLOW.fr.md).
 
 The first canonical adaptation should be read-only. Write support should be
 enabled only after fixtures prove exact loading, LaTeX rendering, identity
@@ -176,18 +181,16 @@ audit persistence.
 4. Harden authentication, authorization, sessions, escaping, and CSRF before
    exposing any canonical data.
 5. Implement read-only French review with deterministic LaTeX fixtures.
-6. Define the audit/comment schema and atomic Git write strategy.
+6. Define the minimal disposable campaign-history schema and atomic canonical
+   import strategy.
 7. Add reviewed branch/PR writes behind feature flags.
 8. Add integration tests against a temporary Git repository before deployment.
 
 ## Decisions Required Before Implementation
 
-- authoritative baseline and candidate revision selection;
-- whether reviewer comments belong in canonical metadata or a separate audit
-  artifact;
+- candidate selection within an immutable canonical baseline;
 - exact allowed review-state transitions for French;
 - reviewer authorization source and least-privilege GitHub integration model;
 - image source and offline behavior;
-- whether approval creates a commit directly or always creates/updates a pull
-  request;
+- exact sandbox branch lifecycle and cleanup point;
 - deployment owner, environment, secrets storage, and rollback procedure.
