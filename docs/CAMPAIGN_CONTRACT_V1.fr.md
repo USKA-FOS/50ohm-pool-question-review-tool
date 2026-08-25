@@ -19,6 +19,10 @@ requis.
 ```text
 campaign.meta.json
 media.refs.json
+derived/
+  navigation.index.json
+  question_pool_ch-de.json
+  question_pool_ch-fr.json
 pool/
   questions/
     <question_id>/
@@ -29,6 +33,16 @@ pool/
 reviews/
   <question_id>.json       # absent tant qu'aucun commentaire n'existe
 ```
+
+Le répertoire `derived/` contient uniquement des index de navigation générés
+depuis le canonical lors de l'export. Les catalogues localisés conservent la
+hiérarchie des chapitres sélectionnés dans le format attendu par la table des
+matières du prototype. `navigation.index.json` relie le `number` affiché au
+`question_id` canonique et fournit les statuts de révision sans imposer une
+requête GitHub par question.
+
+Ces fichiers ne sont jamais modifiés par les réviseurs et ne sont pas importés
+dans le canonical. Toute campagne exportée par chapitres doit les régénérer.
 
 Les quatre fichiers placés sous `pool/questions/<question_id>/` gardent
 exactement le schéma du canonical. Aucun champ propre à l'outil de révision

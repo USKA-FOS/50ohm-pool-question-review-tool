@@ -15,7 +15,6 @@ import difflib
 
 # FIXME: Find a better way to deal with this
 from toc_helper import toc
-contents = toc()
 
 # Load config from .env file (.env.example is provided)
 from dotenv import load_dotenv
@@ -24,6 +23,7 @@ CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
 CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
 OWNER = os.getenv('GITHUB_OWNER')
 REPO = os.getenv('GITHUB_REPO')
+CAMPAIGN_BRANCH = os.getenv('CAMPAIGN_BRANCH')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
 SESSION_SECRET = os.getenv('SESSION_SECRET')
 SCOPE = 'repo'
@@ -33,6 +33,7 @@ required_config = {
     'GITHUB_CLIENT_SECRET': CLIENT_SECRET,
     'GITHUB_OWNER': OWNER,
     'GITHUB_REPO': REPO,
+    'CAMPAIGN_BRANCH': CAMPAIGN_BRANCH,
     'GITHUB_CALLBACK_URL': CALLBACK_URL,
     'SESSION_SECRET': SESSION_SECRET,
 }
@@ -124,8 +125,7 @@ def b64decode(data):
 def b64encode(data):
     return base64.b64encode(data.encode('utf-8')).decode()
 
-def fetch(ref, key, token):
-    path = f'questions/{key}.json'
+def fetch_path(ref, path, token):
     r = requests.get(
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
         params={'ref': ref},
@@ -141,24 +141,57 @@ def fetch(ref, key, token):
     }
 
 
+def canonical_to_legacy_question(payload):
+    return {
+        'question': payload['question'],
+        'answer_a': payload['answer_a'],
+        'answer_b': payload['answer_b'],
+        'answer_c': payload['answer_c'],
+        'answer_d': payload['answer_d'],
+        'picture_question': payload['picture_question_url'],
+        'picture_a': payload['picture_answer_a_url'],
+        'picture_b': payload['picture_answer_b_url'],
+        'picture_c': payload['picture_answer_c_url'],
+        'picture_d': payload['picture_answer_d_url'],
+    }
+
+
+def load_campaign(token):
+    manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
+    if manifest.get('campaign_branch') != CAMPAIGN_BRANCH:
+        raise ValueError('Configured branch does not match campaign.meta.json.')
+    if 'de' not in manifest.get('languages', []) or 'fr' not in manifest.get('languages', []):
+        raise ValueError('The initial interface requires German and French campaign data.')
+    navigation = fetch_path(
+        CAMPAIGN_BRANCH,
+        'derived/question_pool_ch-de.json',
+        token,
+    )['json']
+    campaign_toc = toc(navigation)
+    navigation_index = fetch_path(
+        CAMPAIGN_BRANCH,
+        'derived/navigation.index.json',
+        token,
+    )['json']
+    questions_by_number = {}
+    for item in navigation_index['items']:
+        question_id = item['question_id']
+        number = item['internal_code']
+        questions_by_number[number] = {
+            'question_id': question_id,
+            'review': item['review'],
+        }
+        if item.get('review', {}).get('fr') == 'approved':
+            campaign_toc.mark_reviewed(number)
+    return manifest, campaign_toc, questions_by_number
+
+
 @app.get('/', response_class=HTMLResponse)
 def index(request: Request):
     logged_in = bool(get_token(request))
     if logged_in:
         try:
-            # We need this to understand which questions have been reviewed already
-            # FIXME: This will break at some point -- implement pagination
-            r = requests.get(
-                f'https://api.github.com/repos/{OWNER}/{REPO}/compare/FR_orig_DeepL...WIP',
-                headers=github_headers(get_token(request)),
-            )
-            r.raise_for_status()
-            for file in r.json()['files']:
-                # We need to split the questions/ prefix and the .json suffix from the filename
-                # FIXME: Use pathlib for this?
-                contents.mark_reviewed(file['filename'].split('/')[-1].split('.')[0])
-
-            # Rate limit info will be prinated to understand whether we are about to have troubles
+            _, campaign_toc, _ = load_campaign(get_token(request))
             r = requests.get(
                 f'https://api.github.com/rate_limit',
                 headers=github_headers(get_token(request)),
@@ -168,7 +201,7 @@ def index(request: Request):
         except requests.exceptions.HTTPError as e:
             return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
-        table_of_contents = contents.toc.children
+        table_of_contents = campaign_toc.toc.children
     else:
         limit_json = None
         table_of_contents = None
@@ -253,10 +286,23 @@ def edit_question(request: Request, key: str):
         return RedirectResponse('/login')
 
     try:
-        data_de      = fetch('german_orig', key, token)
-        data_fr_orig = fetch('FR_orig_DeepL', key, token)
-        data_fr_wip  = fetch('WIP', key, token)
-    except requests.exceptions.HTTPError as e:
+        _, campaign_toc, questions_by_number = load_campaign(token)
+        if key not in questions_by_number:
+            return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
+        question_id = questions_by_number[key]['question_id']
+        data_de = fetch_path(
+            CAMPAIGN_BRANCH,
+            f'pool/questions/{question_id}/question.de.json',
+            token,
+        )
+        data_fr = fetch_path(
+            CAMPAIGN_BRANCH,
+            f'pool/questions/{question_id}/question.fr.json',
+            token,
+        )
+        de = canonical_to_legacy_question(data_de['json'])
+        fr = canonical_to_legacy_question(data_fr['json'])
+    except (requests.exceptions.HTTPError, ValueError) as e:
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
     return templates.TemplateResponse(
@@ -264,14 +310,14 @@ def edit_question(request: Request, key: str):
         name='editor.html',
         context={
             'key': key,
-            'de': data_de['json'],
-            'fr': data_fr_wip['json'],
-            'diff': word_diff(data_fr_orig['json'], data_fr_wip['json']),
-            'sha': data_fr_wip['sha'],
-            'next_question': contents.next_q_in_subsection(key),
-            'prev_question': contents.prev_q_in_subsection(key),
-            'next_section': contents.next_q_in_section(key),
-            'prev_section': contents.prev_q_in_section(key)
+            'de': de,
+            'fr': fr,
+            'diff': word_diff(fr, fr),
+            'sha': data_fr['sha'],
+            'next_question': campaign_toc.next_q_in_subsection(key),
+            'prev_question': campaign_toc.prev_q_in_subsection(key),
+            'next_section': campaign_toc.next_q_in_section(key),
+            'prev_section': campaign_toc.prev_q_in_section(key)
         },
     )
 
@@ -288,44 +334,7 @@ def save_question(
     answer_d: Optional[str] = Form(None),
     comment: Optional[str] = Form(None)
 ):
-    token = get_token(request)
-    if not token:
-        return RedirectResponse('/login')
-
-    # Prepare updated JSON
-    data_fr_wip_json = fetch('WIP', key, token)['json']
-    # FIXME: Sometimes, the strings are not None but empty. The frontend should catch
-    # this but it would be better to also sanitize in the backend.
-    if data_fr_wip_json['question'] is not None: data_fr_wip_json['question'] = question
-    if data_fr_wip_json['answer_a'] is not None: data_fr_wip_json['answer_a'] = answer_a
-    if data_fr_wip_json['answer_b'] is not None: data_fr_wip_json['answer_b'] = answer_b
-    if data_fr_wip_json['answer_c'] is not None: data_fr_wip_json['answer_c'] = answer_c
-    if data_fr_wip_json['answer_d'] is not None: data_fr_wip_json['answer_d'] = answer_d
-    username = request.session['username']
-    data_fr_wip_json['review'] = username
-    commit_message = f'Update {key} via web UI (edited by @{username})'
-    if comment is not None:
-        if 'HB.comments' not in data_fr_wip_json:
-            data_fr_wip_json['HB.comments'] = []
-        data_fr_wip_json['HB.comments'].append(f'{username}: {comment}')
-        commit_message += f'\n\n{comment}'
-    encoded = b64encode(json.dumps(data_fr_wip_json, indent=4))
-
-    # Commit
-    path = f'questions/{key}.json'
-
-    r = requests.put(
-        f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
-        headers=github_headers(token),
-        json={
-            'message': commit_message,
-            'content': encoded,
-            'sha': sha,
-            'branch': 'WIP',
-        },
+    return HTMLResponse(
+        '<h1>Read-only campaign</h1><p>Saving is not enabled in this implementation stage.</p>',
+        status_code=405,
     )
-
-    if r.status_code >= 300:
-        return HTMLResponse(f'<h1>Error</h1><pre>{r.text}</pre>')
-
-    return RedirectResponse(f'/edit/{key}', status_code=303)

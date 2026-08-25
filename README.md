@@ -26,16 +26,24 @@ Keep secrets outside the repository, for example in
 `~/.config/50ohm-review-tool/local.env`. Build and start the local baseline with:
 
 ```bash
-docker build --tag 50ohm-question-review-tool:canonical-start .
+docker build --tag 50ohm-question-review-tool:campaign-readonly .
 
 docker run --rm --detach \
   --name 50ohm-question-review-local \
   --publish 127.0.0.1:8080:8080 \
   --env-file ~/.config/50ohm-review-tool/local.env \
+  --env GITHUB_OWNER=isqsoft \
+  --env GITHUB_REPO=50ohm-question-review-campaigns \
+  --env CAMPAIGN_BRANCH=campaign/fr-empfaenger-sinus-signals-example \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
-  50ohm-question-review-tool:canonical-start
+  50ohm-question-review-tool:campaign-readonly
 ```
 
 The server is then available at `http://localhost:8080`. Its health endpoint
 is `http://localhost:8080/healthz`.
+
+The current campaign integration is deliberately read-only. It reads the
+German-French campaign and its derived table of contents directly through the
+GitHub API. The existing frontend templates are unchanged, and the save route
+returns HTTP 405 until campaign writes are implemented explicitly.

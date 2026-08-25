@@ -21,46 +21,25 @@ class tree_node:
         return 100*self.n_reviewed/len(self.children)
 
 class toc:
-    def __init__(self):
-        # FIXME: Find a better way to compile TOC. This is not the JSON file we should use
-        input_json = json.loads(Path('fragenkatalog3b.json').read_text().replace('\\u00df', 'ss'))
+    def __init__(self, input_json=None):
+        if input_json is None:
+            input_json = json.loads(Path('fragenkatalog3b.json').read_text())
         self.toc = tree_node(parent=None, value='')
         self.question_map = {} # Use to look up chapters based on question key
 
-        internal_nodes = [] # FIXME: Only needed for pruning below
         for chapter in input_json['sections']:
-            current_chapter = tree_node(parent=toc, value=chapter['title'])
-            internal_nodes.append(current_chapter)
+            current_chapter = tree_node(parent=self.toc, value=chapter['title'])
             self.toc.children.append(current_chapter)
             for section in chapter['sections']:
                 current_section = tree_node(parent=current_chapter, value=section['title'])
-                internal_nodes.append(current_section)
                 current_chapter.children.append(current_section)
                 for subsection in section['sections']:
                     current_subsection = tree_node(parent=current_section, value=subsection['title'])
-                    internal_nodes.append(current_subsection)
                     current_section.children.append(current_subsection)
-                    for q in reversed(subsection['questions']):
+                    for q in subsection['questions']:
                         current_question = tree_node(parent=current_subsection, value=q['number'])
-
-                        # FIXME: Only needed for pruning below
-                        test = q['number'].startswith('NA') or q['number'].startswith('NB') or q['number'].startswith('AF')
-                        if not test: continue
-
                         current_subsection.children.append(current_question)
                         self.question_map[q['number']] = current_question
-            break # FIXME: skip B & V
-
-        # Here we do the pruning
-        for q in self.question_map.values():
-            q.parent.painted = True
-            q.parent.parent.painted = True
-            q.parent.parent.parent.painted = True
-            q.parent.parent.parent.parent.painted = True
-
-        for n in internal_nodes:
-            if not n.painted:
-                n.parent.children.remove(n)
 
 
     def lookup(self, q: str):
