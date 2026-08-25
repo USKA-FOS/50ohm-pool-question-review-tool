@@ -67,6 +67,11 @@ derived navigation index is not updated by reviewers. The editor therefore
 shows the current status loaded from metadata; table-of-contents progress is
 still based on the export snapshot in this intermediate implementation.
 
+The approval-only path was verified end to end with `AB301/fr`: the GitHub
+commit changed only its metadata status, and the canonical importer dry-run
+reported one ready item, 41 not-approved items, no conflicts, no invalid items,
+and `canonical_write_performed=false`.
+
 For a private organization repository, the OAuth application must be granted
 access to that organization. Otherwise authentication succeeds but campaign
 reads return HTTP 403.
