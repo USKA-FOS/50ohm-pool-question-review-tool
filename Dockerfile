@@ -11,6 +11,9 @@ RUN pip install --no-cache-dir -r requirements.txt
 # Copy the project
 COPY . .
 
+RUN useradd --create-home --uid 10001 app
+USER app
+
 # Expose the port FastAPI will run on
 EXPOSE 8080
 

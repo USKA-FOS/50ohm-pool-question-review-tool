@@ -1,0 +1,309 @@
+# Contrat de campagne de révision, version 1
+
+## Portée
+
+Ce document définit le format minimal d'une campagne de révision de questions.
+Il précède l'implémentation de l'exporteur, de l'importeur et l'adaptation de
+l'interface.
+
+Le canonical reste `50ohm-question-pool/pool/`. Une campagne en contient un
+sous-ensemble de travail, mais ne devient jamais une autre source canonique.
+
+## Structure d'une branche de campagne
+
+```text
+campaign.meta.json
+media.refs.json
+pool/
+  questions/
+    <question_id>/
+      question.meta.json
+      question.de.json
+      question.fr.json
+      question.it.json
+reviews/
+  <question_id>.json       # absent tant qu'aucun commentaire n'existe
+```
+
+Les quatre fichiers placés sous `pool/questions/<question_id>/` gardent
+exactement le schéma du canonical. Aucun champ propre à l'outil de révision
+n'est ajouté aux fichiers `question.<langue>.json`.
+
+Les questions sont inscrites dans `campaign.meta.json` dans l'ordre de leur
+`internal_code`. Cet ordre sert également à la navigation dans l'interface.
+
+## `campaign.meta.json`
+
+Exemple complet :
+
+```json
+{
+  "schema_version": 1,
+  "campaign_id": "fr-terminology-antennas",
+  "campaign_branch": "campaign/fr-terminology-antennas",
+  "canonical_source": {
+    "repository": "USKA-FOS/50ohm-question-pool",
+    "source_ref": "Revision_2.4",
+    "revision": "<commit>",
+    "pool_path": "pool"
+  },
+  "media_source": {
+    "repository": "USKA-FOS/50ohm-contents-ch",
+    "source_ref": "<branche-ou-tag>",
+    "revision": "<commit>",
+    "manifest": "media.refs.json"
+  },
+  "languages": ["de", "fr", "it"],
+  "editable_languages": ["fr"],
+  "question_ids": [
+    "q_111111111111",
+    "q_222222222222"
+  ],
+  "selection_reasons": {
+    "q_111111111111": ["chapter:EG", "terminology"],
+    "q_222222222222": ["quality-audit"]
+  }
+}
+```
+
+### Champs obligatoires
+
+- `schema_version` : entier, valeur `1` pour ce contrat ;
+- `campaign_id` : identifiant descriptif stable, indépendant des versions du
+  site ;
+- `campaign_branch` : branche Git commune sur laquelle travaillent les
+  réviseurs ;
+- `canonical_source.repository` : dépôt ayant fourni les questions ;
+- `canonical_source.revision` : commit Git immuable réellement exporté ;
+- `canonical_source.pool_path` : valeur `pool` pour le modèle actuel ;
+- `media_source.repository` : dépôt public fournissant les médias ;
+- `media_source.revision` : commit Git immuable des médias ;
+- `media_source.manifest` : chemin de `media.refs.json` ;
+- `languages` : langues copiées dans la campagne ;
+- `editable_languages` : langues que l'interface peut modifier ;
+- `question_ids` : périmètre exhaustif autorisé de la campagne ;
+- `selection_reasons` : raisons informatives de la sélection, indexées par
+  `question_id`.
+
+`source_ref` conserve le nom de la branche ou du tag fourni à l'exporteur. Il
+est informatif. Seul le commit `revision` est normatif.
+
+L'export échoue si une langue modifiable n'est pas dans `languages`, si une
+question est répétée, absente du canonical, ou si les références Git ne peuvent
+pas être résolues en commits.
+
+## Initialisation des statuts
+
+Le canonical stocke déjà les statuts dans :
+
+```json
+{
+  "review": {
+    "de": "approved",
+    "fr": "to_be_reviewed",
+    "it": "to_be_reviewed"
+  }
+}
+```
+
+L'export copie toute la métadonnée de la question, puis met uniquement le
+statut des `editable_languages` à `to_be_reviewed` dans la copie de campagne.
+Les autres langues et métadonnées restent inchangées.
+
+L'interface de campagne utilise seulement trois décisions :
+
+- `to_be_reviewed` : travail ouvert ou correction encore demandée ;
+- `approved` : représentation prête à être proposée à l'import ;
+- `rejected` : résultat à ne pas importer.
+
+Les autres valeurs canoniques restent valides dans les langues non modifiables,
+mais l'interface ne les invente pas comme étapes supplémentaires. Ces statuts
+informent le processus ; ils ne bloquent jamais les autres questions de la
+campagne.
+
+## Commentaires de travail
+
+Un commentaire n'est enregistré que lorsqu'il apporte une information utile.
+Il est placé hors du sous-ensemble canonical :
+
+```json
+{
+  "schema_version": 1,
+  "question_id": "q_111111111111",
+  "comments": {
+    "fr": [
+      "Vérifier la terminologie de l'antenne avec le glossaire."
+    ]
+  }
+}
+```
+
+Le fichier est absent lorsqu'aucun commentaire n'existe. Il ne contient ni nom
+de réviseur ni date : Git fournit déjà l'auteur, la date, le diff et l'ordre des
+opérations. Le répertoire `reviews/` n'est jamais importé dans le canonical.
+
+L'interface affiche néanmoins l'auteur de chaque commentaire. Elle le déduit du
+commit Git qui a introduit l'entrée correspondante dans
+`reviews/<question_id>.json`. Le nom affiché vient de l'identité GitHub du
+commit, pas d'un champ recopié dans le JSON.
+
+## `media.refs.json`
+
+Les champs `picture_question_url` et `picture_answer_a_url` à
+`picture_answer_d_url` désignent actuellement des dessins. Le générateur les
+charge depuis `contents/drawings/<id>.svg`.
+
+Il ne faut pas déterminer le type d'un média en recherchant seulement son
+identifiant numérique : des identifiants identiques existent dans les dessins
+et les photos. L'exporteur résout chaque référence de question comme un dessin
+et enregistre explicitement l'objet choisi.
+
+Exemple :
+
+```json
+{
+  "schema_version": 1,
+  "repository": "USKA-FOS/50ohm-contents-ch",
+  "revision": "<commit>",
+  "items": {
+    "546": {
+      "kind": "drawing",
+      "object_id": "dr_aaaaaaaaaaaa",
+      "variants": {
+        "de": {
+          "path": "canonical/drawings/dr_aaaaaaaaaaaa/546.de.svg",
+          "source_language": "de",
+          "media_type": "image/svg+xml"
+        },
+        "fr": {
+          "path": "canonical/drawings/dr_aaaaaaaaaaaa/546.de.svg",
+          "source_language": "de",
+          "media_type": "image/svg+xml"
+        },
+        "it": {
+          "path": "canonical/drawings/dr_aaaaaaaaaaaa/546.de.svg",
+          "source_language": "de",
+          "media_type": "image/svg+xml"
+        }
+      }
+    }
+  }
+}
+```
+
+Pour chaque langue, l'exporteur sélectionne d'abord la variante de cette langue.
+Si elle n'existe pas, il inscrit explicitement la variante allemande comme
+repli avec `source_language: "de"`. L'interface utilise uniquement le chemin
+résolu dans le manifeste et ne refait pas cette décision.
+
+L'export échoue si l'identifiant n'a aucun dessin canonique, si le fichier
+annoncé est absent ou si aucune variante allemande n'est disponible. Le schéma
+autorise `kind: "photo"` pour une évolution future, mais aucune référence de
+question actuelle ne doit être convertie implicitement en photo.
+
+## Enregistrement et conflits Git
+
+L'outil écrit directement dans la branche commune indiquée par
+`campaign_branch`. Chaque sauvegarde fournit le SHA Git du fichier lu. Si ce
+SHA n'est plus courant, GitHub refuse l'écriture et l'interface demande de
+recharger la question. Aucun écrasement automatique n'est autorisé.
+
+Une sauvegarde peut modifier :
+
+- `question.<langue>.json` pour une langue modifiable ;
+- `review.<langue>` dans `question.meta.json` ;
+- le fichier facultatif `reviews/<question_id>.json`.
+
+Les identifiants, références externes, niveaux de classe, autres langues et
+autres statuts ne sont pas modifiables dans l'interface.
+
+À côté du statut, l'interface affiche le réviseur qui l'a défini. Elle parcourt
+l'historique Git de `question.meta.json` et retient le dernier commit ayant
+effectivement changé `review.<langue>`. Le dernier auteur du fichier ne suffit
+pas, car un autre champ de métadonnée peut avoir été modifié plus récemment.
+
+Si l'auteur ne peut pas être résolu, l'interface affiche un auteur inconnu sans
+inventer de nom et sans empêcher la révision. La lecture de ces informations ne
+modifie aucun fichier de campagne.
+
+## Règle d'import
+
+L'import est évalué séparément pour chaque couple `(question_id, langue)`.
+Seul un statut de campagne `approved` rend ce couple importable. Un statut
+`to_be_reviewed` ou `rejected` produit un élément ignoré dans le rapport, sans
+bloquer les autres résultats.
+
+Pour un résultat approuvé, l'importeur :
+
+1. charge le contenu de base à `canonical_source.revision` ;
+2. charge le canonical courant ;
+3. compare le fichier de la langue visée et `review.<langue>` ;
+4. signale un conflit si l'un de ces éléments a changé dans le canonical ;
+5. valide le contenu de campagne ;
+6. propose le remplacement du seul fichier linguistique et la mise à jour du
+   seul statut concerné.
+
+Les autres champs de `question.meta.json` ne sont jamais remplacés en bloc.
+Une approbation sans modification de texte peut donc proposer uniquement le
+passage du statut à `approved`.
+
+## Rapport `--dry-run`
+
+Le rapport JSON est normatif. Un Markdown lisible est généré à partir du même
+rapport sans contenir d'information supplémentaire.
+
+```json
+{
+  "schema_version": 1,
+  "dry_run": true,
+  "canonical_write_performed": false,
+  "campaign_id": "fr-terminology-antennas",
+  "campaign_revision": "<commit>",
+  "canonical_base_revision": "<commit>",
+  "canonical_current_revision": "<commit>",
+  "summary": {
+    "ready": 1,
+    "skipped_not_approved": 1,
+    "conflict": 0,
+    "invalid": 0
+  },
+  "items": [
+    {
+      "question_id": "q_111111111111",
+      "internal_code": "EG101",
+      "language": "fr",
+      "status": "approved",
+      "outcome": "ready",
+      "content_changed": true,
+      "status_changed": true,
+      "changed_fields": ["question", "answer_b"],
+      "messages": []
+    }
+  ]
+}
+```
+
+Les valeurs de `outcome` sont limitées à :
+
+- `ready` : import possible, avec ou sans modification textuelle ;
+- `skipped_not_approved` : statut différent de `approved` ;
+- `conflict` : la base canonical visée a changé ;
+- `invalid` : contrat ou contenu non valide.
+
+Le rapport contient toutes les questions et langues modifiables, y compris les
+éléments ignorés. Le mode `--dry-run` ne modifie aucun fichier du canonical et
+ne crée aucun commit.
+
+## Hors contrat version 1
+
+La version 1 ne définit pas :
+
+- une branche par réviseur ;
+- une machine à états de premier et second contrôle ;
+- une base de données ;
+- des réservations de questions ;
+- l'import réel ;
+- l'édition des chapitres, dessins ou photos ;
+- la publication automatique d'une version bêta.
+
+Ces fonctions ne seront ajoutées que si un besoin observé les justifie.

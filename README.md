@@ -14,3 +14,28 @@ Through the web interface, users can view questions, add review comments, and su
 
 ## Deployment
 A new container image is built and deployed automatically when changes are merged into the `deploy` branch, making deployment to Google Cloud Run seamless. To run the tool locally, you need to install the requirements as listed in `requirements.txt` and create a `.env` file based on `.env.example` where you provide the required environment variables.
+
+## Local Docker baseline
+
+The local GitHub OAuth application must use:
+
+- homepage URL: `http://localhost:8080`
+- callback URL: `http://localhost:8080/auth/callback`
+
+Keep secrets outside the repository, for example in
+`~/.config/50ohm-review-tool/local.env`. Build and start the local baseline with:
+
+```bash
+docker build --tag 50ohm-question-review-tool:canonical-start .
+
+docker run --rm --detach \
+  --name 50ohm-question-review-local \
+  --publish 127.0.0.1:8080:8080 \
+  --env-file ~/.config/50ohm-review-tool/local.env \
+  --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
+  --env SESSION_HTTPS_ONLY=false \
+  50ohm-question-review-tool:canonical-start
+```
+
+The server is then available at `http://localhost:8080`. Its health endpoint
+is `http://localhost:8080/healthz`.
