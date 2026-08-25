@@ -9,6 +9,11 @@ l'interface.
 Le canonical reste `50ohm-question-pool/pool/`. Une campagne en contient un
 sous-ensemble de travail, mais ne devient jamais une autre source canonique.
 
+Pendant le développement, le dépôt permanent de campagnes est
+`isqsoft/50ohm-question-review-campaigns`. L'outil de révision y accède
+directement par l'API GitHub. Aucun checkout local permanent de ce dépôt n'est
+requis.
+
 ## Structure d'une branche de campagne
 
 ```text
@@ -225,6 +230,11 @@ pas, car un autre champ de métadonnée peut avoir été modifié plus récemmen
 Si l'auteur ne peut pas être résolu, l'interface affiche un auteur inconnu sans
 inventer de nom et sans empêcher la révision. La lecture de ces informations ne
 modifie aucun fichier de campagne.
+
+Les outils en ligne de commande d'export et d'import peuvent utiliser un clone
+ou un worktree temporaire sous un répertoire `work/` non suivi. Ils doivent
+terminer leur opération GitHub avant de considérer l'export comme réussi. Ce
+répertoire temporaire n'est ni une sauvegarde ni une source de vérité.
 
 ## Règle d'import
 

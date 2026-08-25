@@ -60,9 +60,13 @@ Ce dépôt Git contient le travail des campagnes et leur historique. Ce n'est
 pas un espace jetable : il garde la mémoire des sélections, modifications,
 commentaires et validations effectués pendant les révisions.
 
-Dans un premier temps, ce dépôt est créé dans l'environnement local actuel. La
-même structure pourra ensuite être déplacée ou publiée dans l'environnement de
-production sans modifier le contrat de campagne.
+Le dépôt de développement retenu est
+`isqsoft/50ohm-question-review-campaigns`. Il est hébergé sur GitHub dès les
+essais : l'application le lit et l'écrit directement par l'API GitHub. Il n'est
+donc pas nécessaire de maintenir un checkout local permanent. Un clone
+temporaire peut être utilisé par les outils en ligne de commande, mais GitHub
+reste le stockage persistant. Le dépôt pourra ensuite être transféré vers son
+emplacement de production sans modifier le contrat ni perdre son historique.
 
 Tous les réviseurs d'une campagne travaillent sur une branche commune. Il n'y
 a pas de branche par réviseur.
@@ -84,6 +88,8 @@ L'outil de révision :
 
 Le prototype tourne actuellement sur le serveur de l'utilisateur. Son
 déploiement dans Google Cloud n'est pas une condition de cette adaptation.
+L'architecture ne dépend pas d'un disque serveur persistant et reste compatible
+avec un déploiement serverless ultérieur dans Google Cloud.
 
 ### `50ohm-contents-ch`
 

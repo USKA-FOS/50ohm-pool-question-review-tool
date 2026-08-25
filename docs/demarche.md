@@ -15,16 +15,20 @@ Aucun code applicatif avant validation de ces contrats.
 
 ### 2. Créer le dépôt de révision
 
-1. Créer localement un nouveau dépôt Git permanent.
+1. Créer le dépôt GitHub permanent
+   `isqsoft/50ohm-question-review-campaigns`.
 2. Ajouter sur main uniquement :
     - un README ;
     - les schémas de campagne ;
     - la documentation.
 
-3. Publier ce dépôt sur GitHub pour permettre au prototype d’utiliser l’API GitHub.
-4. Conserver le même historique lorsque le dépôt sera déplacé vers son emplacement de production.
+3. Faire lire et écrire ce dépôt directement par l’API GitHub du prototype.
+4. N’utiliser un clone local que temporairement pour les outils en ligne de
+   commande et conserver le même historique lorsque le dépôt sera transféré
+   vers son emplacement de production.
 
-Le dépôt peut être privé pendant les essais. Il ne s’agit pas encore d’un déploiement en production.
+Le dépôt peut être privé pendant les essais. Il ne s’agit pas encore d’un
+déploiement en production. Aucun checkout local permanent n’est requis.
 
 ### 3. Construire les outils de campagne
 
