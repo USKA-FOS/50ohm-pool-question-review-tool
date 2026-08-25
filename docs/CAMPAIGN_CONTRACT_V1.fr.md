@@ -112,6 +112,12 @@ Exemple complet :
 `source_ref` conserve le nom de la branche ou du tag fourni à l'exporteur. Il
 est informatif. Seul le commit `revision` est normatif.
 
+Une campagne n'a pas de langue de sortie unique. `editable_languages` contient
+une à trois langues et définit l'ensemble des langues que la campagne autorise
+à modifier. Dans l'interface, `review_language` désigne seulement la langue
+active à un instant donné. Changer cette sélection ne retire pas les
+modifications ou approbations déjà enregistrées dans les autres langues.
+
 L'export échoue si une langue modifiable n'est pas dans `languages`, si une
 question est répétée, absente du canonical, ou si les références Git ne peuvent
 pas être résolues en commits.
@@ -258,6 +264,9 @@ répertoire temporaire n'est ni une sauvegarde ni une source de vérité.
 ## Règle d'import
 
 L'import est évalué séparément pour chaque couple `(question_id, langue)`.
+L'importeur parcourt toutes les langues de `editable_languages`, indépendamment
+de la dernière langue active dans l'interface. Une même campagne peut donc
+proposer simultanément des modifications allemandes, françaises et italiennes.
 Seul un statut de campagne `approved` rend ce couple importable. Un statut
 `to_be_reviewed` ou `rejected` produit un élément ignoré dans le rapport, sans
 bloquer les autres résultats.

@@ -17,7 +17,7 @@
             </select>
         </div>
         <div class="col-md-4">
-            <label for="review_language" class="form-label">Review language</label>
+            <label for="review_language" class="form-label">Active review language</label>
             <select id="review_language" name="review_language" class="form-select">
                 {% for language in editable_languages %}
                 <option value="{{ language }}" {% if language == review_language %}selected{% endif %}>
