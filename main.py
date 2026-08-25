@@ -27,6 +27,11 @@ CAMPAIGN_BRANCH = os.getenv('CAMPAIGN_BRANCH')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
 SESSION_SECRET = os.getenv('SESSION_SECRET')
 SCOPE = 'repo'
+LANGUAGE_LABELS = {
+    'de': 'German',
+    'fr': 'French',
+    'it': 'Italian',
+}
 
 required_config = {
     'GITHUB_CLIENT_ID': CLIENT_ID,
@@ -122,14 +127,12 @@ def github_headers(token):
 def b64decode(data):
     return base64.b64decode(data).decode('utf-8')
 
-def b64encode(data):
-    return base64.b64encode(data.encode('utf-8')).decode()
-
 def fetch_path(ref, path, token):
     r = requests.get(
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
         params={'ref': ref},
         headers=github_headers(token),
+        timeout=15,
     )
     r.raise_for_status()
     d = r.json()
@@ -156,15 +159,37 @@ def canonical_to_legacy_question(payload):
     }
 
 
-def load_campaign(token):
+def select_languages(manifest, requested_reference=None, requested_review=None):
+    languages = manifest.get('languages', [])
+    editable_languages = manifest.get('editable_languages', [])
+    if len(languages) < 2:
+        raise ValueError('A review campaign requires at least two languages.')
+    if not editable_languages or any(language not in languages for language in editable_languages):
+        raise ValueError('Campaign editable_languages must be a non-empty subset of languages.')
+
+    review_language = requested_review or ('fr' if 'fr' in editable_languages else editable_languages[0])
+    if review_language not in editable_languages:
+        raise ValueError(f'Language {review_language} is not editable in this campaign.')
+
+    reference_choices = [language for language in languages if language != review_language]
+    reference_language = requested_reference or ('de' if 'de' in reference_choices else reference_choices[0])
+    if reference_language not in reference_choices:
+        raise ValueError('Reference and review languages must be distinct campaign languages.')
+    return reference_language, review_language
+
+
+def load_campaign(token, requested_reference=None, requested_review=None):
     manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
     if manifest.get('campaign_branch') != CAMPAIGN_BRANCH:
         raise ValueError('Configured branch does not match campaign.meta.json.')
-    if 'de' not in manifest.get('languages', []) or 'fr' not in manifest.get('languages', []):
-        raise ValueError('The initial interface requires German and French campaign data.')
+    reference_language, review_language = select_languages(
+        manifest,
+        requested_reference,
+        requested_review,
+    )
     navigation = fetch_path(
         CAMPAIGN_BRANCH,
-        'derived/question_pool_ch-de.json',
+        f'derived/question_pool_ch-{reference_language}.json',
         token,
     )['json']
     campaign_toc = toc(navigation)
@@ -181,9 +206,9 @@ def load_campaign(token):
             'question_id': question_id,
             'review': item['review'],
         }
-        if item.get('review', {}).get('fr') == 'approved':
+        if item.get('review', {}).get(review_language) == 'approved':
             campaign_toc.mark_reviewed(number)
-    return manifest, campaign_toc, questions_by_number
+    return manifest, campaign_toc, questions_by_number, reference_language, review_language
 
 
 @app.get('/', response_class=HTMLResponse)
@@ -191,7 +216,11 @@ def index(request: Request):
     logged_in = bool(get_token(request))
     if logged_in:
         try:
-            _, campaign_toc, _ = load_campaign(get_token(request))
+            manifest, campaign_toc, _, reference_language, review_language = load_campaign(
+                get_token(request),
+                request.query_params.get('reference_language'),
+                request.query_params.get('review_language'),
+            )
             r = requests.get(
                 f'https://api.github.com/rate_limit',
                 headers=github_headers(get_token(request)),
@@ -200,11 +229,19 @@ def index(request: Request):
             limit_json = r.json()
         except requests.exceptions.HTTPError as e:
             return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
+        except ValueError as e:
+            return HTMLResponse(f'<h1>Invalid language selection</h1><pre>{e}</pre>', status_code=400)
 
         table_of_contents = campaign_toc.toc.children
+        languages = manifest['languages']
+        editable_languages = manifest['editable_languages']
     else:
         limit_json = None
         table_of_contents = None
+        languages = []
+        editable_languages = []
+        reference_language = None
+        review_language = None
         
     return templates.TemplateResponse(
         request=request,
@@ -213,6 +250,11 @@ def index(request: Request):
             'logged_in': logged_in,
             'toc': table_of_contents,
             'rate_limit_json': limit_json,
+            'languages': languages,
+            'editable_languages': editable_languages,
+            'reference_language': reference_language,
+            'review_language': review_language,
+            'language_labels': LANGUAGE_LABELS,
         },
     )
 
@@ -286,22 +328,26 @@ def edit_question(request: Request, key: str):
         return RedirectResponse('/login')
 
     try:
-        _, campaign_toc, questions_by_number = load_campaign(token)
+        _, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
+            token,
+            request.query_params.get('reference_language'),
+            request.query_params.get('review_language'),
+        )
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
-        data_de = fetch_path(
+        data_reference = fetch_path(
             CAMPAIGN_BRANCH,
-            f'pool/questions/{question_id}/question.de.json',
+            f'pool/questions/{question_id}/question.{reference_language}.json',
             token,
         )
-        data_fr = fetch_path(
+        data_review = fetch_path(
             CAMPAIGN_BRANCH,
-            f'pool/questions/{question_id}/question.fr.json',
+            f'pool/questions/{question_id}/question.{review_language}.json',
             token,
         )
-        de = canonical_to_legacy_question(data_de['json'])
-        fr = canonical_to_legacy_question(data_fr['json'])
+        reference = canonical_to_legacy_question(data_reference['json'])
+        review = canonical_to_legacy_question(data_review['json'])
     except (requests.exceptions.HTTPError, ValueError) as e:
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
@@ -310,10 +356,14 @@ def edit_question(request: Request, key: str):
         name='editor.html',
         context={
             'key': key,
-            'de': de,
-            'fr': fr,
-            'diff': word_diff(fr, fr),
-            'sha': data_fr['sha'],
+            'reference': reference,
+            'review': review,
+            'diff': word_diff(review, review),
+            'sha': data_review['sha'],
+            'reference_language': reference_language,
+            'review_language': review_language,
+            'reference_language_label': LANGUAGE_LABELS.get(reference_language, reference_language.upper()),
+            'review_language_label': LANGUAGE_LABELS.get(review_language, review_language.upper()),
             'next_question': campaign_toc.next_q_in_subsection(key),
             'prev_question': campaign_toc.prev_q_in_subsection(key),
             'next_section': campaign_toc.next_q_in_section(key),

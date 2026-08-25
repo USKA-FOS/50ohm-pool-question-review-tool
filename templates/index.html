@@ -5,6 +5,33 @@
 {% if not logged_in %}
     <h1>Please log in to access questions.</h1>
 {% else %}
+    <form method="get" action="/" class="row g-3 align-items-end mt-2">
+        <div class="col-md-4">
+            <label for="reference_language" class="form-label">Reference language</label>
+            <select id="reference_language" name="reference_language" class="form-select">
+                {% for language in languages %}
+                    {% if language != review_language %}
+                    <option value="{{ language }}" {% if language == reference_language %}selected{% endif %}>
+                        {{ language_labels.get(language, language|upper) }}
+                    </option>
+                    {% endif %}
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-4">
+            <label for="review_language" class="form-label">Review language</label>
+            <select id="review_language" name="review_language" class="form-select">
+                {% for language in editable_languages %}
+                <option value="{{ language }}" {% if language == review_language %}selected{% endif %}>
+                    {{ language_labels.get(language, language|upper) }}
+                </option>
+                {% endfor %}
+            </select>
+        </div>
+        <div class="col-md-2">
+            <button class="btn btn-primary">Apply</button>
+        </div>
+    </form>
     <h4 class="mt-4">Table of Contents</h4>
     <ol type="I">
         {% for chapter in toc %}
@@ -19,7 +46,7 @@
                     <div class="progress-bar bg-success" role="progressbar" style="width: {{subsection.progress}}%;" aria-valuenow="{{subsection.progress}}" aria-valuemin="0" aria-valuemax="100">
                     </div>
                 </div>
-                <a href="/edit/{{subsection.children[0].value}}">{{subsection.value}}</a> ({{subsection.n_reviewed}}/{{subsection.children|count}} questions)
+                <a href="/edit/{{subsection.children[0].value}}?reference_language={{reference_language}}&review_language={{review_language}}">{{subsection.value}}</a> ({{subsection.n_reviewed}}/{{subsection.children|count}} questions)
                 </li>
                 {% endfor %}
             </ol>
@@ -31,6 +58,8 @@
     <form action="/edit" method="get">
         <label for="key">Enter question key:</label>
         <input name="key" id="key" class="form-control" required>
+        <input type="hidden" name="reference_language" value="{{ reference_language }}">
+        <input type="hidden" name="review_language" value="{{ review_language }}">
         <button class="btn btn-primary mt-2">Load</button>
     </form>
     {%if rate_limit_json is not none %}

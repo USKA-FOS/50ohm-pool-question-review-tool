@@ -45,5 +45,16 @@ is `http://localhost:8080/healthz`.
 
 The current campaign integration is deliberately read-only. It reads the
 German-French campaign and its derived table of contents directly through the
-GitHub API. The existing frontend templates are unchanged, and the save route
-returns HTTP 405 until campaign writes are implemented explicitly.
+GitHub API. The save route returns HTTP 405 until campaign writes are
+implemented explicitly.
+
+After GitHub login, the interface reads `languages` and `editable_languages`
+from `campaign.meta.json`. The reference and review languages are selected in
+the table-of-contents page and carried through every navigation link. They must
+be distinct, and only a language listed in `editable_languages` can be selected
+for review. The current example campaign therefore offers German as reference
+and French as review language.
+
+For a private organization repository, the OAuth application must be granted
+access to that organization. Otherwise authentication succeeds but campaign
+reads return HTTP 403.
