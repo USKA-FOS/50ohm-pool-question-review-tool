@@ -26,6 +26,7 @@ class toc:
             input_json = json.loads(Path('fragenkatalog3b.json').read_text())
         self.toc = tree_node(parent=None, value='')
         self.question_map = {} # Use to look up chapters based on question key
+        self.subsections = []
 
         for chapter in input_json['sections']:
             current_chapter = tree_node(parent=self.toc, value=chapter['title'])
@@ -36,6 +37,7 @@ class toc:
                 for subsection in section['sections']:
                     current_subsection = tree_node(parent=current_section, value=subsection['title'])
                     current_section.children.append(current_subsection)
+                    self.subsections.append(current_subsection)
                     for q in subsection['questions']:
                         current_question = tree_node(parent=current_subsection, value=q['number'])
                         current_subsection.children.append(current_question)
@@ -65,22 +67,18 @@ class toc:
         return subsection.children[idx-1].value
 
     def next_q_in_section(self, q: str):
-        q_node = self.question_map[q]
-        subsection = q_node.parent
-        section = subsection.parent
-        idx = section.children.index(subsection)
-        if idx+1 == len(section.children):
+        subsection = self.question_map[q].parent
+        idx = self.subsections.index(subsection)
+        if idx+1 == len(self.subsections):
             return None
-        return section.children[idx+1].children[0].value
+        return self.subsections[idx+1].children[0].value
 
     def prev_q_in_section(self, q: str):
-        q_node = self.question_map[q]
-        subsection = q_node.parent
-        section = subsection.parent
-        idx = section.children.index(subsection)
+        subsection = self.question_map[q].parent
+        idx = self.subsections.index(subsection)
         if idx == 0:
             return None
-        return section.children[idx-1].children[0].value
+        return self.subsections[idx-1].children[0].value
 
     def mark_reviewed(self, q: str):
         self.question_map[q].reviewed = True

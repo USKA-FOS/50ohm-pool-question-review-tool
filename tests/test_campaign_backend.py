@@ -59,6 +59,17 @@ class CampaignBackendTests(unittest.TestCase):
                                     ],
                                 }
                             ],
+                        },
+                        {
+                            "title": "Other section",
+                            "sections": [
+                                {
+                                    "title": "Sinusförmige Signale",
+                                    "questions": [
+                                        {"number": "NF201"},
+                                    ],
+                                }
+                            ],
                         }
                     ],
                 }
@@ -74,6 +85,11 @@ class CampaignBackendTests(unittest.TestCase):
                 {
                     "question_id": "q_222222222222",
                     "internal_code": "NF102",
+                    "review": {"de": "approved", "fr": "to_be_reviewed"},
+                },
+                {
+                    "question_id": "q_333333333333",
+                    "internal_code": "NF201",
                     "review": {"de": "approved", "fr": "to_be_reviewed"},
                 },
             ]
@@ -100,6 +116,10 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertTrue(campaign_toc.question_map["NF101"].reviewed)
         self.assertFalse(campaign_toc.question_map["NF102"].reviewed)
         self.assertEqual(campaign_toc.next_q_in_subsection("NF101"), "NF102")
+        self.assertEqual(campaign_toc.next_q_in_section("NF101"), "NF201")
+        self.assertEqual(campaign_toc.prev_q_in_section("NF201"), "NF101")
+        self.assertIsNone(campaign_toc.prev_q_in_section("NF101"))
+        self.assertIsNone(campaign_toc.next_q_in_section("NF201"))
 
     def test_language_selection_uses_manifest_and_requires_distinct_languages(self) -> None:
         manifest = {

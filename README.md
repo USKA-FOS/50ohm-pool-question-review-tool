@@ -55,6 +55,11 @@ be distinct, and only a language listed in `editable_languages` can be selected
 for review. The current example campaign therefore offers German as reference
 and French as review language.
 
+Previous/next question navigation stays inside the displayed chapter.
+Previous/next section navigation follows the complete ordered list of selected
+question-bearing chapters, including transitions between different canonical
+parent sections.
+
 For a private organization repository, the OAuth application must be granted
 access to that organization. Otherwise authentication succeeds but campaign
 reads return HTTP 403.
