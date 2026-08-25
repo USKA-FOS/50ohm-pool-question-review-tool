@@ -52,10 +52,11 @@ separate write paths are implemented.
 
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
-the table-of-contents page and carried through every navigation link. They must
-be distinct, and only a language listed in `editable_languages` can be selected
-for review. The current example campaign exports and makes editable German,
-French, and Italian, so every distinct reference/review pair is available.
+the table-of-contents page and carried through every navigation link. They may
+be identical, which supports DE→DE, FR→FR, and IT→IT linguistic reviews.
+Only a language listed in `editable_languages` can be selected for review. The
+current example campaign exports and makes editable German, French, and
+Italian, so all nine reference/review combinations are available.
 
 Statuses are direct choices, not a state machine. A reviewer may set the
 selected language to `to_be_reviewed`, `approved`, or `rejected` from any

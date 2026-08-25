@@ -139,18 +139,23 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertIsNone(campaign_toc.prev_q_in_section("NF101"))
         self.assertIsNone(campaign_toc.next_q_in_section("NF201"))
 
-    def test_language_selection_uses_manifest_and_requires_distinct_languages(self) -> None:
+    def test_language_selection_allows_same_language_review(self) -> None:
         manifest = {
             "languages": ["de", "fr", "it"],
-            "editable_languages": ["fr", "it"],
+            "editable_languages": ["de", "fr", "it"],
         }
 
         self.assertEqual(main.select_languages(manifest), ("de", "fr"))
         self.assertEqual(main.select_languages(manifest, "fr", "it"), ("fr", "it"))
+        self.assertEqual(main.select_languages(manifest, "de", "de"), ("de", "de"))
+        self.assertEqual(main.select_languages(manifest, "fr", "fr"), ("fr", "fr"))
+        self.assertEqual(main.select_languages(manifest, "it", "it"), ("it", "it"))
+        restricted_manifest = {
+            "languages": ["de", "fr", "it"],
+            "editable_languages": ["fr", "it"],
+        }
         with self.assertRaisesRegex(ValueError, "not editable"):
-            main.select_languages(manifest, "fr", "de")
-        with self.assertRaisesRegex(ValueError, "must be distinct"):
-            main.select_languages(manifest, "fr", "fr")
+            main.select_languages(restricted_manifest, "fr", "de")
 
     def test_templates_render_and_preserve_dynamic_language_query(self) -> None:
         request = SimpleNamespace(session={"token": "test-token"})

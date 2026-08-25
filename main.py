@@ -301,10 +301,9 @@ def select_languages(manifest, requested_reference=None, requested_review=None):
     if review_language not in editable_languages:
         raise ValueError(f'Language {review_language} is not editable in this campaign.')
 
-    reference_choices = [language for language in languages if language != review_language]
-    reference_language = requested_reference or ('de' if 'de' in reference_choices else reference_choices[0])
-    if reference_language not in reference_choices:
-        raise ValueError('Reference and review languages must be distinct campaign languages.')
+    reference_language = requested_reference or ('de' if 'de' in languages else languages[0])
+    if reference_language not in languages:
+        raise ValueError(f'Language {reference_language} is not available in this campaign.')
     return reference_language, review_language
 
 
