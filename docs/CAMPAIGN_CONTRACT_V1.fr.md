@@ -34,6 +34,11 @@ Les quatre fichiers placés sous `pool/questions/<question_id>/` gardent
 exactement le schéma du canonical. Aucun champ propre à l'outil de révision
 n'est ajouté aux fichiers `question.<langue>.json`.
 
+Les valeurs textuelles `null` et `""` restent distinctes. Un `null` n'est
+valide que si le champ d'image correspondant est renseigné. Une chaîne vide est
+également une valeur canonique existante, notamment pour certaines structures
+sans réponses textuelles ; l'exporteur la conserve sans la convertir.
+
 Les questions sont inscrites dans `campaign.meta.json` dans l'ordre de leur
 `internal_code`. Cet ordre sert également à la navigation dans l'interface.
 
