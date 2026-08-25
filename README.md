@@ -14,3 +14,24 @@ Through the web interface, users can view questions, add review comments, and su
 
 ## Deployment
 A new container image is built and deployed automatically when changes are merged into the `deploy` branch, making deployment to Google Cloud Run seamless. To run the tool locally, you need to install the requirements as listed in `requirements.txt` and create a `.env` file based on `.env.example` where you provide the required environment variables.
+
+
+### Docker Compose behind nginx-proxy
+
+The included Compose definition connects the application to the external
+`rproxy_net` network and publishes it through `nginx-proxy` without exposing a
+host port.
+
+1. Create a DNS record for the selected `APP_HOST` pointing to the server.
+2. Create a GitHub OAuth App. Set its homepage URL to
+   `https://APP_HOST/` and its authorization callback URL to
+   `https://APP_HOST/auth/callback`.
+3. Copy `.env.example` to `.env`, set the hostname, Let's Encrypt email, OAuth
+   credentials, target repository and a random `SESSION_SECRET`.
+4. Build and start the service with `docker compose up -d --build`.
+5. Validate it with `docker compose ps`, `docker compose logs` and
+   `curl https://APP_HOST/healthz`.
+
+The `.env` file contains secrets and is excluded from both Git and the Docker
+build context. The service uses GitHub authentication; users still need the
+required repository permissions for write operations on the `WIP` branch.

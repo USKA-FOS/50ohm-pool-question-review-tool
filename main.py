@@ -1,6 +1,8 @@
 import os
 import base64
 import json
+import secrets
+from urllib.parse import urlencode
 import requests
 from fastapi import FastAPI, Request, Depends, Form
 from fastapi.responses import RedirectResponse, HTMLResponse
@@ -22,10 +24,29 @@ CLIENT_ID = os.getenv('GITHUB_CLIENT_ID')
 CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
 OWNER = os.getenv('GITHUB_OWNER')
 REPO = os.getenv('GITHUB_REPO')
+CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
+SESSION_SECRET = os.getenv('SESSION_SECRET')
 SCOPE = 'repo'
 
+required_config = {
+    'GITHUB_CLIENT_ID': CLIENT_ID,
+    'GITHUB_CLIENT_SECRET': CLIENT_SECRET,
+    'GITHUB_OWNER': OWNER,
+    'GITHUB_REPO': REPO,
+    'GITHUB_CALLBACK_URL': CALLBACK_URL,
+    'SESSION_SECRET': SESSION_SECRET,
+}
+missing_config = [key for key, value in required_config.items() if not value]
+if missing_config:
+    raise RuntimeError(f"Missing required configuration: {', '.join(missing_config)}")
+
 app = FastAPI()
-app.add_middleware(SessionMiddleware, secret_key=os.getenv('SESSION_SECRET'))
+app.add_middleware(
+    SessionMiddleware,
+    secret_key=SESSION_SECRET,
+    https_only=os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
+    same_site='lax',
+)
 app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
 
@@ -153,25 +174,40 @@ def index(request: Request):
         table_of_contents = None
         
     return templates.TemplateResponse(
-        'index.html',
-        {'request': request,
-         'logged_in': logged_in,
-         'toc': table_of_contents,
-         'rate_limit_json': limit_json}
+        request=request,
+        name='index.html',
+        context={
+            'logged_in': logged_in,
+            'toc': table_of_contents,
+            'rate_limit_json': limit_json,
+        },
     )
+
+
+@app.get('/healthz')
+def healthz():
+    return {'status': 'ok'}
 
 
 @app.get('/login')
-def login():
-    url = (
-        'https://github.com/login/oauth/authorize'
-        f'?client_id={CLIENT_ID}&scope={SCOPE}'
-    )
-    return RedirectResponse(url)
+def login(request: Request):
+    state = secrets.token_urlsafe(32)
+    request.session['oauth_state'] = state
+    query = urlencode({
+        'client_id': CLIENT_ID,
+        'redirect_uri': CALLBACK_URL,
+        'scope': SCOPE,
+        'state': state,
+    })
+    return RedirectResponse(f'https://github.com/login/oauth/authorize?{query}')
 
 
 @app.get('/auth/callback')
-def auth_callback(code: str, request: Request):
+def auth_callback(code: str, state: str, request: Request):
+    expected_state = request.session.pop('oauth_state', None)
+    if not expected_state or not secrets.compare_digest(state, expected_state):
+        return HTMLResponse('<h1>Invalid OAuth state</h1>', status_code=400)
+
     resp = requests.post(
         'https://github.com/login/oauth/access_token',
         headers={'Accept': 'application/json'},
@@ -179,13 +215,23 @@ def auth_callback(code: str, request: Request):
             'client_id': CLIENT_ID,
             'client_secret': CLIENT_SECRET,
             'code': code,
+            'redirect_uri': CALLBACK_URL,
         },
+        timeout=15,
     )
+    resp.raise_for_status()
     token = resp.json().get('access_token')
+    if not token:
+        return HTMLResponse('<h1>GitHub authentication failed</h1>', status_code=401)
     request.session['token'] = token
 
     # Store username
-    user_resp = requests.get('https://api.github.com/user', headers=github_headers(token))
+    user_resp = requests.get(
+        'https://api.github.com/user',
+        headers=github_headers(token),
+        timeout=15,
+    )
+    user_resp.raise_for_status()
     request.session['username'] = user_resp.json().get('login', 'unknown-user')
     return RedirectResponse('/')
 
@@ -214,9 +260,9 @@ def edit_question(request: Request, key: str):
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
     return templates.TemplateResponse(
-        'editor.html',
-        {
-            'request': request,
+        request=request,
+        name='editor.html',
+        context={
             'key': key,
             'de': data_de['json'],
             'fr': data_fr_wip['json'],
