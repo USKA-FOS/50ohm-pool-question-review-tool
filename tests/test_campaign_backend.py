@@ -37,6 +37,32 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(adapted["picture_question"], 101)
         self.assertEqual(adapted["picture_b"], 102)
 
+    def test_approval_changes_only_requested_review_status(self) -> None:
+        meta = {
+            "id": "q_111111111111",
+            "review": {"de": "approved", "fr": "to_be_reviewed", "it": "rejected"},
+            "external_refs": [],
+        }
+
+        approved = main.approved_meta(meta, "q_111111111111", "fr")
+
+        self.assertEqual(approved["review"]["fr"], "approved")
+        self.assertEqual(approved["review"]["it"], "rejected")
+        self.assertEqual(meta["review"]["fr"], "to_be_reviewed")
+
+    def test_approval_only_stage_detects_submitted_text_changes(self) -> None:
+        current = {
+            "question": "Question?",
+            "answer_a": "A",
+            "answer_b": None,
+            "answer_c": "",
+            "answer_d": "D",
+        }
+
+        self.assertTrue(main.submitted_text_is_unchanged(current, "Question?", "A", None, None, "D"))
+        self.assertFalse(main.submitted_text_is_unchanged(current, "Changed?", "A", None, None, "D"))
+        self.assertFalse(main.submitted_text_is_unchanged(current, "Question?", "A", "B", None, "D"))
+
     def test_campaign_load_builds_toc_and_marks_approved_questions(self) -> None:
         manifest = {
             "campaign_branch": "campaign/test",
@@ -169,6 +195,8 @@ class CampaignBackendTests(unittest.TestCase):
             review=question,
             diff=main.word_diff(question, question),
             sha="abc",
+            meta_sha="def",
+            review_status="to_be_reviewed",
             reference_language="de",
             review_language="fr",
             reference_language_label="German",
@@ -183,6 +211,105 @@ class CampaignBackendTests(unittest.TestCase):
             "/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
         )
+
+    def test_save_approves_metadata_without_writing_question_text(self) -> None:
+        request = SimpleNamespace(
+            session={"token": "test-token", "username": "reviewer"},
+            query_params={"reference_language": "de", "review_language": "fr"},
+        )
+        content = {
+            "question_id": "q_111111111111",
+            "language": "fr",
+            "question": "Question?",
+            "answer_a": "A",
+            "answer_b": "B",
+            "answer_c": "C",
+            "answer_d": "D",
+        }
+        meta = {
+            "id": "q_111111111111",
+            "review": {"de": "approved", "fr": "to_be_reviewed", "it": "to_be_reviewed"},
+        }
+
+        with (
+            patch.object(
+                main,
+                "load_campaign",
+                return_value=(
+                    {},
+                    None,
+                    {"NF101": {"question_id": "q_111111111111"}},
+                    "de",
+                    "fr",
+                ),
+            ),
+            patch.object(
+                main,
+                "fetch_path",
+                side_effect=[
+                    {"sha": "content-sha", "json": content},
+                    {"sha": "meta-sha", "json": meta},
+                ],
+            ),
+            patch.object(main, "update_path") as update_path,
+        ):
+            response = main.save_question(
+                request=request,
+                key="NF101",
+                sha="content-sha",
+                meta_sha="meta-sha",
+                question="Question?",
+                answer_a="A",
+                answer_b="B",
+                answer_c="C",
+                answer_d="D",
+                comment=None,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        update_path.assert_called_once()
+        args = update_path.call_args.args
+        self.assertEqual(args[0], "pool/questions/q_111111111111/question.meta.json")
+        self.assertEqual(args[1]["review"]["fr"], "approved")
+        self.assertEqual(args[2], "meta-sha")
+
+    def test_save_rejects_stale_sha_without_writing(self) -> None:
+        request = SimpleNamespace(
+            session={"token": "test-token"},
+            query_params={"reference_language": "de", "review_language": "fr"},
+        )
+        with (
+            patch.object(
+                main,
+                "load_campaign",
+                return_value=(
+                    {},
+                    None,
+                    {"NF101": {"question_id": "q_111111111111"}},
+                    "de",
+                    "fr",
+                ),
+            ),
+            patch.object(
+                main,
+                "fetch_path",
+                side_effect=[
+                    {"sha": "new-content-sha", "json": {}},
+                    {"sha": "meta-sha", "json": {}},
+                ],
+            ),
+            patch.object(main, "update_path") as update_path,
+        ):
+            response = main.save_question(
+                request=request,
+                key="NF101",
+                sha="old-content-sha",
+                meta_sha="meta-sha",
+                question="Question?",
+            )
+
+        self.assertEqual(response.status_code, 409)
+        update_path.assert_not_called()
 
 
 if __name__ == "__main__":

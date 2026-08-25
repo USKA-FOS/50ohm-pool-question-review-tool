@@ -43,10 +43,12 @@ docker run --rm --detach \
 The server is then available at `http://localhost:8080`. Its health endpoint
 is `http://localhost:8080/healthz`.
 
-The current campaign integration is deliberately read-only. It reads the
-German-French campaign and its derived table of contents directly through the
-GitHub API. The save route returns HTTP 405 until campaign writes are
-implemented explicitly.
+The current campaign integration reads the German-French campaign and its
+derived table of contents directly through the GitHub API. The first write
+stage supports approval only: it can change `review.<language>` to `approved`
+in `question.meta.json` after checking both the localized-content SHA and the
+metadata SHA. Submitted text changes and comments are rejected until their
+separate write paths are implemented.
 
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
@@ -59,6 +61,11 @@ Previous/next question navigation stays inside the displayed chapter.
 Previous/next section navigation follows the complete ordered list of selected
 question-bearing chapters, including transitions between different canonical
 parent sections.
+
+`question.meta.json` is the only current source for a review status. The
+derived navigation index is not updated by reviewers. The editor therefore
+shows the current status loaded from metadata; table-of-contents progress is
+still based on the export snapshot in this intermediate implementation.
 
 For a private organization repository, the OAuth application must be granted
 access to that organization. Otherwise authentication succeeds but campaign

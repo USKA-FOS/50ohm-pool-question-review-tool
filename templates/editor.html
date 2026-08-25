@@ -7,7 +7,7 @@
 <div class="row my-3">
     <div class="col-md-6">
         <div class="card">
-            <div class="card-header"><h4>{{ review_language_label }}</h4></div>
+            <div class="card-header"><h4>{{ review_language_label }} <small class="text-muted">({{ review_status }})</small></h4></div>
             {# TODO: Move to separate file #}
             <div class="card-body">
                 <p class="card-text">{{ diff.question | render_diff | safe}}</p>
@@ -95,6 +95,7 @@
         <div class="col-md-6">
             <h4>Edit Question:</h4>
             <input type="hidden" name="sha" value="{{ sha }}">
+            <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
             <div class="mb-3">
                 <textarea name="question" class="form-control" rows="10">{{ review.question }}</textarea>
             </div>
@@ -145,7 +146,7 @@
         <div class="col d-flex justify-content-center gap-2">
             <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>
             <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Question ←</a>
-            <button class="btn btn-warning">Commit to repository / Approve review</button>
+            <button class="btn btn-warning">Approve review</button>
             <a class="btn btn-primary {%if next_question is none %}disabled{%endif%}" role="button" href="/edit/{{next_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >→ Next Question</a>
             <a class="btn btn-primary {%if next_section is none %}disabled{%endif%}" role="button" href="/edit/{{next_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >→→ Next Section</a>
         </div>
