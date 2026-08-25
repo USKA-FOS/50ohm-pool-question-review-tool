@@ -10,11 +10,9 @@
             <label for="reference_language" class="form-label">Reference language</label>
             <select id="reference_language" name="reference_language" class="form-select">
                 {% for language in languages %}
-                    {% if language != review_language %}
                     <option value="{{ language }}" {% if language == reference_language %}selected{% endif %}>
                         {{ language_labels.get(language, language|upper) }}
                     </option>
-                    {% endif %}
                 {% endfor %}
             </select>
         </div>

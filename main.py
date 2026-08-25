@@ -32,6 +32,12 @@ LANGUAGE_LABELS = {
     'fr': 'French',
     'it': 'Italian',
 }
+REVIEW_STATUSES = ('to_be_reviewed', 'approved', 'rejected')
+REVIEW_STATUS_LABELS = {
+    'to_be_reviewed': 'To be reviewed',
+    'approved': 'Approve',
+    'rejected': 'Reject',
+}
 
 required_config = {
     'GITHUB_CLIENT_ID': CLIENT_ID,
@@ -151,19 +157,99 @@ def fetch_path(ref, path, token):
 
 def update_path(path, payload, sha, message, token):
     encoded = b64encode(json.dumps(payload, ensure_ascii=True, indent=2) + '\n')
+    request_payload = {
+        'message': message,
+        'content': encoded,
+        'branch': CAMPAIGN_BRANCH,
+    }
+    if sha is not None:
+        request_payload['sha'] = sha
     response = requests.put(
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
         headers=github_headers(token),
-        json={
-            'message': message,
-            'content': encoded,
-            'sha': sha,
-            'branch': CAMPAIGN_BRANCH,
-        },
+        json=request_payload,
         timeout=15,
     )
     response.raise_for_status()
     return response.json()
+
+
+def fetch_optional_path(ref, path, token):
+    try:
+        return fetch_path(ref, path, token)
+    except requests.exceptions.HTTPError as exc:
+        if exc.response is not None and exc.response.status_code == 404:
+            return None
+        raise
+
+
+def github_commits_for_path(path, token):
+    response = requests.get(
+        f'https://api.github.com/repos/{OWNER}/{REPO}/commits',
+        params={'sha': CAMPAIGN_BRANCH, 'path': path, 'per_page': 100},
+        headers=github_headers(token),
+        timeout=15,
+    )
+    response.raise_for_status()
+    return response.json()
+
+
+def commit_author(commit):
+    github_author = commit.get('author')
+    if isinstance(github_author, dict) and github_author.get('login'):
+        return github_author['login']
+    commit_author_data = commit.get('commit', {}).get('author', {})
+    return commit_author_data.get('name') or 'unknown'
+
+
+def status_author(path, language, token):
+    for commit in github_commits_for_path(path, token):
+        current = fetch_optional_path(commit['sha'], path, token)
+        if current is None:
+            continue
+        current_status = current['json'].get('review', {}).get(language)
+        parents = commit.get('parents', [])
+        previous_status = None
+        if parents:
+            previous = fetch_optional_path(parents[0]['sha'], path, token)
+            if previous is not None:
+                previous_status = previous['json'].get('review', {}).get(language)
+        if current_status != previous_status:
+            return commit_author(commit)
+    return 'unknown'
+
+
+def load_comments(question_id, language, token):
+    path = f'reviews/{question_id}.json'
+    current = fetch_optional_path(CAMPAIGN_BRANCH, path, token)
+    if current is None:
+        return None, []
+    payload = current['json']
+    if payload.get('schema_version') != 1 or payload.get('question_id') != question_id:
+        raise ValueError('Invalid campaign comment file.')
+    comments_by_language = payload.get('comments')
+    if not isinstance(comments_by_language, dict):
+        raise ValueError('Invalid campaign comments object.')
+    comments = comments_by_language.get(language, [])
+    if not isinstance(comments, list) or any(not isinstance(comment, str) for comment in comments):
+        raise ValueError(f'Invalid campaign comments for {language}.')
+
+    authors = ['unknown'] * len(comments)
+    previous_count = 0
+    for commit in reversed(github_commits_for_path(path, token)):
+        version = fetch_optional_path(commit['sha'], path, token)
+        if version is None:
+            continue
+        version_comments = version['json'].get('comments', {}).get(language, [])
+        if not isinstance(version_comments, list):
+            continue
+        for index in range(previous_count, min(len(version_comments), len(authors))):
+            authors[index] = commit_author(commit)
+        previous_count = max(previous_count, len(version_comments))
+    return current['sha'], [
+        {'text': text, 'author': authors[index]}
+        for index, text in enumerate(comments)
+    ]
 
 
 def canonical_to_legacy_question(payload):
@@ -181,25 +267,9 @@ def canonical_to_legacy_question(payload):
     }
 
 
-def submitted_text_is_unchanged(current, question, answer_a, answer_b, answer_c, answer_d):
-    submitted = {
-        'question': question,
-        'answer_a': answer_a,
-        'answer_b': answer_b,
-        'answer_c': answer_c,
-        'answer_d': answer_d,
-    }
-    for field, value in submitted.items():
-        current_value = current[field]
-        if current_value in (None, ''):
-            if value not in (None, ''):
-                return False
-        elif value != current_value:
-            return False
-    return True
-
-
-def approved_meta(meta, question_id, language):
+def meta_with_status(meta, question_id, language, status):
+    if status not in REVIEW_STATUSES:
+        raise ValueError(f'Unsupported review status: {status}.')
     if meta.get('id') != question_id:
         raise ValueError('Question metadata id does not match its directory.')
     review = meta.get('review')
@@ -207,8 +277,16 @@ def approved_meta(meta, question_id, language):
         raise ValueError(f'Question metadata has no review status for {language}.')
     result = dict(meta)
     result['review'] = dict(review)
-    result['review'][language] = 'approved'
+    result['review'][language] = status
     return result
+
+
+def edit_url(key, reference_language, review_language):
+    query = urlencode({
+        'reference_language': reference_language,
+        'review_language': review_language,
+    })
+    return f'/edit/{key}?{query}'
 
 
 def select_languages(manifest, requested_reference=None, requested_review=None):
@@ -406,6 +484,9 @@ def edit_question(request: Request, key: str):
         reference = canonical_to_legacy_question(data_reference['json'])
         review = canonical_to_legacy_question(data_review['json'])
         review_status = data_meta['json'].get('review', {}).get(review_language)
+        meta_path = f'pool/questions/{question_id}/question.meta.json'
+        review_status_author = status_author(meta_path, review_language, token)
+        comments_sha, comments = load_comments(question_id, review_language, token)
     except (requests.exceptions.HTTPError, ValueError) as e:
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
@@ -420,6 +501,11 @@ def edit_question(request: Request, key: str):
             'sha': data_review['sha'],
             'meta_sha': data_meta['sha'],
             'review_status': review_status,
+            'review_status_author': review_status_author,
+            'review_statuses': REVIEW_STATUSES,
+            'review_status_labels': REVIEW_STATUS_LABELS,
+            'comments_sha': comments_sha or '',
+            'comments': comments,
             'reference_language': reference_language,
             'review_language': review_language,
             'reference_language_label': LANGUAGE_LABELS.get(reference_language, reference_language.upper()),
@@ -437,13 +523,25 @@ def save_question(
     request: Request,
     key: str,
     sha: str = Form(...),
-    meta_sha: str = Form(...),
     question: str = Form(...),
     answer_a: Optional[str] = Form(None),
     answer_b: Optional[str] = Form(None),
     answer_c: Optional[str] = Form(None),
     answer_d: Optional[str] = Form(None),
     comment: Optional[str] = Form(None)
+):
+    return HTMLResponse(
+        '<h1>Text editing not enabled</h1><p>No question text was written.</p>',
+        status_code=405,
+    )
+
+
+@app.post('/status/{key}')
+def update_review_status(
+    request: Request,
+    key: str,
+    meta_sha: str = Form(...),
+    status: str = Form(...),
 ):
     token = get_token(request)
     if not token:
@@ -460,39 +558,20 @@ def save_question(
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
-        content_path = f'pool/questions/{question_id}/question.{review_language}.json'
         meta_path = f'pool/questions/{question_id}/question.meta.json'
-        current_content = fetch_path(CAMPAIGN_BRANCH, content_path, token)
         current_meta = fetch_path(CAMPAIGN_BRANCH, meta_path, token)
-        if current_content['sha'] != sha or current_meta['sha'] != meta_sha:
+        if current_meta['sha'] != meta_sha:
             return HTMLResponse(
-                '<h1>Concurrent change detected</h1><p>Reload the question before approving it.</p>',
+                '<h1>Concurrent change detected</h1><p>Reload the question before changing its status.</p>',
                 status_code=409,
             )
-        if not submitted_text_is_unchanged(
-            current_content['json'],
-            question,
-            answer_a,
-            answer_b,
-            answer_c,
-            answer_d,
-        ):
-            return HTMLResponse(
-                '<h1>Text change not saved</h1><p>Text editing is not enabled in this approval-only stage.</p>',
-                status_code=409,
-            )
-        if comment is not None and comment.strip():
-            return HTMLResponse(
-                '<h1>Comment not saved</h1><p>Comment writes are not enabled in this approval-only stage.</p>',
-                status_code=409,
-            )
-        updated_meta = approved_meta(current_meta['json'], question_id, review_language)
+        updated_meta = meta_with_status(current_meta['json'], question_id, review_language, status)
         if updated_meta != current_meta['json']:
             update_path(
                 meta_path,
                 updated_meta,
                 current_meta['sha'],
-                f'Approve {key} {review_language} review',
+                f'Set {key} {review_language} review status to {status}',
                 token,
             )
     except ValueError as exc:
@@ -501,8 +580,67 @@ def save_question(
         status_code = 409 if exc.response is not None and exc.response.status_code in (409, 422) else 502
         return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=status_code)
 
-    query = urlencode({
-        'reference_language': reference_language,
-        'review_language': review_language,
-    })
-    return RedirectResponse(f'/edit/{key}?{query}', status_code=303)
+    return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)
+
+
+@app.post('/comment/{key}')
+def add_review_comment(
+    request: Request,
+    key: str,
+    comments_sha: str = Form(''),
+    comment: str = Form(...),
+):
+    token = get_token(request)
+    if not token:
+        return RedirectResponse('/login')
+    reference_language = request.query_params.get('reference_language')
+    review_language = request.query_params.get('review_language')
+    try:
+        _, _, questions_by_number, reference_language, review_language = load_campaign(
+            token,
+            reference_language,
+            review_language,
+        )
+        if key not in questions_by_number:
+            return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
+        text = comment.strip()
+        if not text:
+            return HTMLResponse('<h1>Empty comment</h1>', status_code=400)
+        question_id = questions_by_number[key]['question_id']
+        path = f'reviews/{question_id}.json'
+        current = fetch_optional_path(CAMPAIGN_BRANCH, path, token)
+        current_sha = current['sha'] if current is not None else ''
+        if current_sha != comments_sha:
+            return HTMLResponse(
+                '<h1>Concurrent change detected</h1><p>Reload the question before adding the comment.</p>',
+                status_code=409,
+            )
+        if current is None:
+            payload = {
+                'schema_version': 1,
+                'question_id': question_id,
+                'comments': {},
+            }
+        else:
+            payload = current['json']
+            if payload.get('schema_version') != 1 or payload.get('question_id') != question_id:
+                raise ValueError('Invalid campaign comment file.')
+            payload = dict(payload)
+            payload['comments'] = dict(payload.get('comments', {}))
+        language_comments = payload['comments'].get(review_language, [])
+        if not isinstance(language_comments, list) or any(not isinstance(item, str) for item in language_comments):
+            raise ValueError(f'Invalid campaign comments for {review_language}.')
+        payload['comments'][review_language] = [*language_comments, text]
+        update_path(
+            path,
+            payload,
+            current['sha'] if current is not None else None,
+            f'Comment on {key} {review_language} review',
+            token,
+        )
+    except ValueError as exc:
+        return HTMLResponse(f'<h1>Invalid campaign data</h1><pre>{exc}</pre>', status_code=400)
+    except requests.exceptions.HTTPError as exc:
+        status_code = 409 if exc.response is not None and exc.response.status_code in (409, 422) else 502
+        return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=status_code)
+    return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)

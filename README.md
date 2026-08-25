@@ -34,7 +34,7 @@ docker run --rm --detach \
   --env-file ~/.config/50ohm-review-tool/local.env \
   --env GITHUB_OWNER=isqsoft \
   --env GITHUB_REPO=50ohm-question-review-campaigns \
-  --env CAMPAIGN_BRANCH=campaign/fr-empfaenger-sinus-signals-example \
+  --env CAMPAIGN_BRANCH=campaign/multilingual-empfaenger-sinus-signals-example \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
   50ohm-question-review-tool:campaign-readonly
@@ -43,7 +43,7 @@ docker run --rm --detach \
 The server is then available at `http://localhost:8080`. Its health endpoint
 is `http://localhost:8080/healthz`.
 
-The current campaign integration reads the German-French campaign and its
+The current campaign integration reads the multilingual campaign and its
 derived table of contents directly through the GitHub API. The first write
 stage supports approval only: it can change `review.<language>` to `approved`
 in `question.meta.json` after checking both the localized-content SHA and the
@@ -54,8 +54,18 @@ After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
 the table-of-contents page and carried through every navigation link. They must
 be distinct, and only a language listed in `editable_languages` can be selected
-for review. The current example campaign therefore offers German as reference
-and French as review language.
+for review. The current example campaign exports and makes editable German,
+French, and Italian, so every distinct reference/review pair is available.
+
+Statuses are direct choices, not a state machine. A reviewer may set the
+selected language to `to_be_reviewed`, `approved`, or `rejected` from any
+current value. The interface resolves the author from the latest Git commit
+that actually changed that language's status.
+
+Comments are append-only working notes stored outside canonical question data
+under `reviews/<question_id>.json`. Each addition is a separate SHA-checked Git
+commit, and the displayed author is derived from the commit that introduced
+that comment.
 
 Previous/next question navigation stays inside the displayed chapter.
 Previous/next section navigation follows the complete ordered list of selected
