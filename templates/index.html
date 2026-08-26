@@ -55,7 +55,7 @@
     <h4 class="mt-4">Edit by Question Key</h4>
     <form action="/edit" method="get">
         <label for="key">Enter question key:</label>
-        <input name="key" id="key" class="form-control" required>
+        <input name="key" id="key" class="form-control" value="{{ remembered_question }}" required>
         <input type="hidden" name="reference_language" value="{{ reference_language }}">
         <input type="hidden" name="review_language" value="{{ review_language }}">
         <button class="btn btn-primary mt-2">Load</button>

@@ -57,6 +57,11 @@ and interpretation.
 The cache and write invariants are documented in
 [Campaign cache and atomic writes](docs/CAMPAIGN_CACHE_AND_WRITES.md).
 
+The browser keeps the selected reference language, active review language, and
+last opened question in persistent preference cookies. On a later visit, valid
+preferences are restored automatically. Values that are not available in the
+current campaign are ignored.
+
 The current campaign integration loads the current branch and its original
 export as two GitHub archives, then serves navigation and question reads from
 an in-memory snapshot. The remote branch head is checked at most once per

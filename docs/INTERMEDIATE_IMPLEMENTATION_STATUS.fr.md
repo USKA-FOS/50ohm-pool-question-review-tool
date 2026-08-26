@@ -34,6 +34,8 @@ proposés ensemble à la réintégration canonical.
 - snapshot mémoire courant et original chargé par archives GitHub, avec
   contrôle périodique du SHA de branche ;
 - table des matières et navigation entre questions et chapitres ;
+- mémorisation locale des deux langues sélectionnées et de la dernière question
+  ouverte, avec validation des préférences contre la campagne active ;
 - affichage des textes, du LaTeX et des dessins ;
 - affichage des différences entre la première version Git du texte localisé
   dans la campagne et le texte actuellement commité, sans exiger un accès

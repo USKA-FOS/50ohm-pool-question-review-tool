@@ -336,6 +336,60 @@ class CampaignBackendTests(unittest.TestCase):
         with self.assertRaisesRegex(ValueError, "not editable"):
             main.select_languages(restricted_manifest, "fr", "de")
 
+    def test_remembered_languages_are_validated_and_query_parameters_win(self) -> None:
+        manifest = {
+            "languages": ["de", "fr", "it"],
+            "editable_languages": ["fr", "it"],
+        }
+        remembered = SimpleNamespace(
+            query_params={},
+            cookies={
+                main.REFERENCE_LANGUAGE_COOKIE: "it",
+                main.REVIEW_LANGUAGE_COOKIE: "fr",
+            },
+        )
+        self.assertEqual(main.requested_languages(remembered, manifest), ("it", "fr"))
+
+        explicit = SimpleNamespace(
+            query_params={"reference_language": "de", "review_language": "it"},
+            cookies={
+                main.REFERENCE_LANGUAGE_COOKIE: "fr",
+                main.REVIEW_LANGUAGE_COOKIE: "fr",
+            },
+        )
+        self.assertEqual(main.requested_languages(explicit, manifest), ("de", "it"))
+
+        obsolete = SimpleNamespace(
+            query_params={},
+            cookies={
+                main.REFERENCE_LANGUAGE_COOKIE: "en",
+                main.REVIEW_LANGUAGE_COOKIE: "de",
+            },
+        )
+        self.assertEqual(main.requested_languages(obsolete, manifest), (None, None))
+
+    def test_review_preferences_are_written_as_persistent_cookies(self) -> None:
+        calls = []
+        response = SimpleNamespace(
+            set_cookie=lambda key, value, **options: calls.append((key, value, options))
+        )
+
+        main.remember_review_preferences(response, "de", "fr", "NF101")
+
+        self.assertEqual(
+            [(key, value) for key, value, _ in calls],
+            [
+                (main.REFERENCE_LANGUAGE_COOKIE, "de"),
+                (main.REVIEW_LANGUAGE_COOKIE, "fr"),
+                (main.LAST_QUESTION_COOKIE, "NF101"),
+            ],
+        )
+        for _, _, options in calls:
+            self.assertEqual(options["max_age"], 365 * 24 * 60 * 60)
+            self.assertTrue(options["httponly"])
+            self.assertEqual(options["samesite"], "lax")
+            self.assertFalse(options["secure"])
+
     def test_templates_render_and_preserve_dynamic_language_query(self) -> None:
         request = SimpleNamespace(session={"token": "test-token"})
         index_html = main.templates.get_template("index.html").render(
@@ -347,11 +401,13 @@ class CampaignBackendTests(unittest.TestCase):
             editable_languages=["de", "fr", "it"],
             reference_language="de",
             review_language="fr",
+            remembered_question="NF101",
             language_labels=main.LANGUAGE_LABELS,
         )
         self.assertIn('name="reference_language"', index_html)
         self.assertIn('name="review_language"', index_html)
         self.assertIn('value="it"', index_html)
+        self.assertIn('id="key" class="form-control" value="NF101"', index_html)
 
         question = {
             "question": "Question?",

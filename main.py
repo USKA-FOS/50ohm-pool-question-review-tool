@@ -43,6 +43,10 @@ LANGUAGE_LABELS = {
     'it': 'Italian',
 }
 REVIEW_STATUSES = ('to_be_reviewed', 'approved')
+PREFERENCE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
+REFERENCE_LANGUAGE_COOKIE = '50ohm_reference_language'
+REVIEW_LANGUAGE_COOKIE = '50ohm_review_language'
+LAST_QUESTION_COOKIE = '50ohm_last_question'
 PROFILE_REQUEST_ID = ContextVar('profile_request_id', default='-')
 PROFILE_EVENTS = ContextVar('profile_events', default=None)
 LOGGER = logging.getLogger('uvicorn.error')
@@ -699,8 +703,9 @@ def select_languages(manifest, requested_reference=None, requested_review=None):
     return reference_language, review_language
 
 
-def load_campaign(token, requested_reference=None, requested_review=None):
-    manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
+def load_campaign(token, requested_reference=None, requested_review=None, manifest=None):
+    if manifest is None:
+        manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
     if manifest.get('campaign_branch') != CAMPAIGN_BRANCH:
         raise ValueError('Configured branch does not match campaign.meta.json.')
     reference_language, review_language = select_languages(
@@ -732,15 +737,46 @@ def load_campaign(token, requested_reference=None, requested_review=None):
     return manifest, campaign_toc, questions_by_number, reference_language, review_language
 
 
+def requested_languages(request, manifest):
+    requested_reference = request.query_params.get('reference_language')
+    if requested_reference is None:
+        remembered_reference = request.cookies.get(REFERENCE_LANGUAGE_COOKIE)
+        if remembered_reference in manifest.get('languages', []):
+            requested_reference = remembered_reference
+
+    requested_review = request.query_params.get('review_language')
+    if requested_review is None:
+        remembered_review = request.cookies.get(REVIEW_LANGUAGE_COOKIE)
+        if remembered_review in manifest.get('editable_languages', []):
+            requested_review = remembered_review
+    return requested_reference, requested_review
+
+
+def remember_review_preferences(response, reference_language, review_language, last_question=None):
+    cookie_options = {
+        'max_age': PREFERENCE_COOKIE_MAX_AGE,
+        'httponly': True,
+        'samesite': 'lax',
+        'secure': os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
+    }
+    response.set_cookie(REFERENCE_LANGUAGE_COOKIE, reference_language, **cookie_options)
+    response.set_cookie(REVIEW_LANGUAGE_COOKIE, review_language, **cookie_options)
+    if last_question is not None:
+        response.set_cookie(LAST_QUESTION_COOKIE, last_question, **cookie_options)
+
+
 @app.get('/', response_class=HTMLResponse)
 def index(request: Request):
     logged_in = bool(get_token(request))
     if logged_in:
         try:
-            manifest, campaign_toc, _, reference_language, review_language = load_campaign(
+            manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', get_token(request))['json']
+            requested_reference, requested_review = requested_languages(request, manifest)
+            manifest, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
                 get_token(request),
-                request.query_params.get('reference_language'),
-                request.query_params.get('review_language'),
+                requested_reference,
+                requested_review,
+                manifest,
             )
             limit_json = None
         except requests.exceptions.HTTPError as e:
@@ -751,6 +787,9 @@ def index(request: Request):
         table_of_contents = campaign_toc.toc.children
         languages = manifest['languages']
         editable_languages = manifest['editable_languages']
+        remembered_question = request.cookies.get(LAST_QUESTION_COOKIE, '')
+        if remembered_question not in questions_by_number:
+            remembered_question = ''
     else:
         limit_json = None
         table_of_contents = None
@@ -758,8 +797,9 @@ def index(request: Request):
         editable_languages = []
         reference_language = None
         review_language = None
+        remembered_question = ''
         
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name='index.html',
         context={
@@ -770,9 +810,13 @@ def index(request: Request):
             'editable_languages': editable_languages,
             'reference_language': reference_language,
             'review_language': review_language,
+            'remembered_question': remembered_question,
             'language_labels': LANGUAGE_LABELS,
         },
     )
+    if logged_in:
+        remember_review_preferences(response, reference_language, review_language)
+    return response
 
 
 @app.get('/healthz')
@@ -848,10 +892,13 @@ def edit_question(request: Request, key: str):
         return RedirectResponse('/login')
 
     try:
+        manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
+        requested_reference, requested_review = requested_languages(request, manifest)
         manifest, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
             token,
-            request.query_params.get('reference_language'),
-            request.query_params.get('review_language'),
+            requested_reference,
+            requested_review,
+            manifest,
         )
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
@@ -882,7 +929,7 @@ def edit_question(request: Request, key: str):
     except (requests.exceptions.HTTPError, ValueError) as e:
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
-    return templates.TemplateResponse(
+    response = templates.TemplateResponse(
         request=request,
         name='editor.html',
         context={
@@ -906,6 +953,8 @@ def edit_question(request: Request, key: str):
             'prev_section': campaign_toc.prev_q_in_section(key)
         },
     )
+    remember_review_preferences(response, reference_language, review_language, key)
+    return response
 
 
 @app.post('/save/{key}')
