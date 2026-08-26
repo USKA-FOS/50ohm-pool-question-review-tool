@@ -238,13 +238,17 @@ class CampaignBackendTests(unittest.TestCase):
         editor_template = main.templates.get_template("editor.html")
         editor_html = editor_template.render(**editor_context)
         self.assertIn("images_fr/202.svg", editor_html)
+        self.assertIn("German (Reference)", editor_html)
         self.assertIn(
             "/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
         )
         self.assertIn('value="commit">Commit</button>', editor_html)
         self.assertNotIn("Add comment", editor_html)
-        self.assertIn("Working with GitHub...", main.templates.get_template("layout.html").render(request=request))
+        layout_html = main.templates.get_template("layout.html").render(request=request)
+        self.assertIn("Please wait. Working with GitHub...", layout_html)
+        self.assertIn('aria-hidden="true" hidden', layout_html)
+        self.assertIn('window.addEventListener("pageshow", hideBusyIndicator)', layout_html)
         self.assertIn("changed by reviewer", editor_html)
 
         editor_context["review_status"] = "approved"

@@ -41,8 +41,11 @@ proposés ensemble à la réintégration canonical.
 - attribution du statut au commit Git qui a réellement modifié la langue ;
 - ajout append-only de commentaires dans `reviews/<question_id>.json` avec
   contrôle SHA et attribution Git ;
-- indicateur bloquant `Working with GitHub...` pendant les formulaires et la
-  navigation interne ;
+- indicateur bloquant `Please wait. Working with GitHub...` pendant les
+  formulaires et la navigation interne, masqué explicitement à la fin du
+  chargement ou lors de la restauration d'une page ;
+- mise en page large avec la langue source marquée `(Reference)`, le statut et
+  l'historique en colonne latérale, et le commentaire à côté de l'éditeur ;
 - importeur canonical limité au mode `--dry-run`.
 
 ## Vérifications réalisées

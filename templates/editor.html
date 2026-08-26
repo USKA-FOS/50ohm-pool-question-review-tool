@@ -6,7 +6,7 @@
 <h2>Question: <code>{{ key }}</code></h2>
 
 <div class="row my-3">
-    <div class="col-md-6">
+    <div class="col-lg-5">
         <div class="card">
             <div class="card-header"><h4>{{ review_language_label }}</h4></div>
             {# TODO: Move to separate file #}
@@ -48,9 +48,9 @@
             </div>
         </div>
     </div>
-    <div class="col-md-6">
+    <div class="col-lg-5">
         <div class="card">
-            <div class="card-header"><h4>{{ reference_language_label }}</h4></div>
+            <div class="card-header"><h4>{{ reference_language_label }} (Reference)</h4></div>
             <div class="card-body">
                 <p class="card-text">{{ reference.question }}</p>
                 {% if reference.picture_question is not none %}
@@ -89,14 +89,9 @@
             </div>
         </div>
     </div>
-</div>
-
-<div class="row my-3">
-    <div class="col-md-6">
+    <aside class="col-lg-2 review-sidebar">
         <h4>Status</h4>
         <p class="text-muted mb-2">Current: {{ review_status }} · changed by {{ review_status_author }}</p>
-    </div>
-    <div class="col-md-6">
         <h4>Comments</h4>
         {% if comments %}
         <ul>
@@ -107,7 +102,7 @@
         {% else %}
         <p class="text-muted">No comments.</p>
         {% endif %}
-    </div>
+    </aside>
 </div>
 
 <form action="/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
@@ -115,14 +110,14 @@
     <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
     <input type="hidden" name="comments_sha" value="{{ comments_sha }}">
     <div class="row my-3">
-        <div class="col-md-6">
+        <div class="col-lg-6">
             <h4>Edit Question:</h4>
             <div class="mb-3">
                 <textarea name="question" class="form-control" rows="10" {% if not review_open %}disabled{% endif %}>{{ review.question }}</textarea>
             </div>
         </div>
 
-        <div class="col-md-6">
+        <div class="col-lg-4">
             <h4>Edit Answers:</h4>
             <div class="mb-2">
                 <label>A (✔)</label>
@@ -144,17 +139,15 @@
                 <input name="answer_d" class="form-control" value="{{ review.answer_d }}"{% if not review_open or review.answer_d is none or review.answer_d == '' %}disabled{% endif %}>
             </div>
         </div>
-    </div>
-    {% if review_open %}
-    <div class="row my-3">
-        <div class="col-md-6 offset-md-6">
+        {% if review_open %}
+        <div class="col-lg-2">
             <label for="commit-comment" class="form-label">Comment (optional)</label>
-            <textarea id="commit-comment" name="comment" class="form-control" rows="3"></textarea>
+            <textarea id="commit-comment" name="comment" class="form-control" rows="10"></textarea>
         </div>
+        {% endif %}
     </div>
-    {% endif %}
     <div class="row my-3">
-        <div class="col d-flex justify-content-center gap-2">
+        <div class="col d-flex flex-wrap justify-content-center gap-2">
             <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>
             <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Question ←</a>
             {% if review_open %}

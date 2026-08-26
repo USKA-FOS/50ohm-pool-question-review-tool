@@ -59,18 +59,30 @@
     {% block content %}{% endblock %}
 </div>
 
-<div id="busy-overlay" class="busy-overlay" aria-live="polite" aria-hidden="true">
+<div id="busy-overlay" class="busy-overlay" aria-live="polite" aria-hidden="true" hidden>
     <div class="busy-message">
         <div class="spinner-border" role="status" aria-hidden="true"></div>
-        <span>Working with GitHub...</span>
+        <span>Please wait. Working with GitHub...</span>
     </div>
 </div>
 
 <script>
+function hideBusyIndicator() {
+    const overlay = document.getElementById("busy-overlay");
+    if (overlay) {
+        overlay.hidden = true;
+        overlay.setAttribute("aria-hidden", "true");
+    }
+}
+
+window.addEventListener("pageshow", hideBusyIndicator);
+window.addEventListener("load", hideBusyIndicator);
+
 document.addEventListener("DOMContentLoaded", function() {
     const overlay = document.getElementById("busy-overlay");
+    hideBusyIndicator();
     const showBusy = function() {
-        overlay.classList.add("is-visible");
+        overlay.hidden = false;
         overlay.setAttribute("aria-hidden", "false");
     };
 
@@ -83,10 +95,6 @@ document.addEventListener("DOMContentLoaded", function() {
                 showBusy();
             }
         });
-    });
-    window.addEventListener("pageshow", function() {
-        overlay.classList.remove("is-visible");
-        overlay.setAttribute("aria-hidden", "true");
     });
 });
 </script>

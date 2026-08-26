@@ -69,8 +69,14 @@ question data under `reviews/<question_id>.json`. They are submitted with
 `Commit`, and the displayed author is derived from the commit that introduced
 the comment.
 
-Forms and internal navigation display a blocking `Working with GitHub...`
-indicator while the synchronous GitHub operation is running.
+Forms and internal navigation display a blocking
+`Please wait. Working with GitHub...` indicator while the synchronous GitHub
+operation is running. It is reset on both normal page loads and browser page
+restoration.
+
+The editor uses the available desktop width: the source language is labelled
+`(Reference)`, status and comment history are shown in a side column, and the
+optional commit comment is placed beside the question and answer editors.
 
 Previous/next question navigation stays inside the displayed chapter.
 Previous/next section navigation follows the complete ordered list of selected
