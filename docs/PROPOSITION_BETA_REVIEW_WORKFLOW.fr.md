@@ -1,4 +1,9 @@
-# Proposition de révision itérative par campagnes
+# Proposition de révision itérative par campagnes (historique)
+
+Ce document expose la proposition initiale et ses phases de déploiement. Le
+mode dry-run exclusif décrit ci-dessous a depuis été complété par un import réel
+contrôlé. Le manuel opérateur courant se trouve dans
+`50ohm-question-pool/docs/QUESTION_REVIEW_CAMPAIGNS.md`.
 
 ## Statut
 

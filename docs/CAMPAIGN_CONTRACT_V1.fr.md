@@ -339,6 +339,23 @@ Le rapport contient toutes les questions et langues modifiables, y compris les
 éléments ignorés. Le mode `--dry-run` ne modifie aucun fichier du canonical et
 ne crée aucun commit.
 
+## Application contrôlée
+
+L'import réel est une commande distincte et exige l'option explicite `--apply`.
+Elle recommence toute l'analyse du dry-run contre les commits et arbres de
+travail actuels. Elle ne se fie donc jamais à un ancien rapport.
+
+Seuls les couples classés `ready` sont appliqués. Pour chacun, l'importeur
+remplace au besoin le seul fichier `question.<langue>.json` concerné et met
+uniquement `review.<langue>` à `approved`. Les éléments
+`skipped_not_approved`, `conflict` et `invalid` restent inchangés et sont
+conservés dans le rapport d'application.
+
+Tous les contenus sont préparés avant la première écriture. Chaque fichier est
+remplacé atomiquement. Une erreur de préparation ne modifie rien ; une erreur
+de remplacement déclenche la restauration des fichiers déjà remplacés. La
+commande ne crée aucun commit Git, ne pousse rien et ne reconstruit aucun build.
+
 ## Hors contrat version 1
 
 La version 1 ne définit pas :
@@ -347,7 +364,6 @@ La version 1 ne définit pas :
 - une machine à états de premier et second contrôle ;
 - une base de données ;
 - des réservations de questions ;
-- l'import réel ;
 - l'édition des chapitres, dessins ou photos ;
 - la publication automatique d'une version bêta.
 

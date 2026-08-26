@@ -1,4 +1,9 @@
-Démarche recommandée
+Démarche recommandée (plan historique)
+
+Ce document conserve le plan progressif adopté avant l'implémentation. L'étape
+dry-run a depuis été complétée par un import réel contrôlé. L'état courant et
+les commandes opérateur sont décrits dans
+`50ohm-question-pool/docs/QUESTION_REVIEW_CAMPAIGNS.md`.
 
 Il faut distinguer le serveur de l’application du dépôt Git de révision. L’application peut tourner localement, mais le prototype utilise l’API GitHub pour lire et écrire les questions. Pour tester le processus réel sans développer un backend local
 jetable, le dépôt de révision doit donc être accessible sur GitHub.

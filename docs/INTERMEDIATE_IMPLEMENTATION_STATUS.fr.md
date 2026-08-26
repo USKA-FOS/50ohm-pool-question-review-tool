@@ -55,7 +55,8 @@ proposés ensemble à la réintégration canonical.
 - mise en page large en trois colonnes égales, avec la langue source marquée
   `(Reference)`, le statut et l'historique en colonne latérale, et le
   commentaire à côté de l'éditeur ;
-- importeur canonical limité au mode `--dry-run`.
+- importeur canonical avec contrôle `--dry-run` puis application explicite des
+  seuls couples `ready`.
 
 ## Vérifications réalisées
 
@@ -66,13 +67,13 @@ proposés ensemble à la réintégration canonical.
 - une modification concurrente du même fichier est refusée ;
 - le premier test d'approbation a produit un élément `ready`, aucun conflit,
   aucun élément invalide et `canonical_write_performed=false` ;
-- aucun fichier sous le canonical `pool/` n'a été modifié par ces essais.
+- les tests automatisés couvrent l'import réel, les conflits partiels et une
+  panne de préparation sans écriture canonique.
 
 ## Limitations intermédiaires
 
-- l'importeur ne possède encore aucun mode d'application canonical ;
-- la progression de la table des matières provient encore de l'index créé à
-  l'export et ne reflète pas immédiatement les changements de statut ;
+- l'import réel reste une commande opérateur séparée et ne déclenche ni build,
+  ni commit, ni publication automatiquement ;
 - les médias sont encore affichés par les URL du site existant plutôt que lus
   au commit enregistré dans `media.refs.json` ;
 - les commentaires peuvent être ajoutés avec `Commit`, mais pas modifiés ou

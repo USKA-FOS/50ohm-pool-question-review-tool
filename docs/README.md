@@ -8,12 +8,12 @@
 - [État intermédiaire de l'implémentation](INTERMEDIATE_IMPLEMENTATION_STATUS.fr.md)
 - [Profilage des opérations GitHub](GITHUB_PROFILING.md)
 - [Cache de campagne et écritures atomiques](CAMPAIGN_CACHE_AND_WRITES.md)
+- [Question review tool design](QUESTION_REVIEW_TOOL_DESIGN.md)
 
 The application is being adapted incrementally. It currently reads an exported
 canonical campaign from GitHub, displays its derived table of contents, and
 supports dynamic reference/review language selection. Campaign writes remain
-protected by SHA conflict checks. One `Commit` action writes changed text,
-appends an optional comment, and approves the active language; `Reopen` restores
-the open status. Documentation in this directory describes the current
-behavior and the remaining work before reviewed data can safely return to the
-canonical `50ohm-question-pool` repository.
+protected by SHA and branch-head conflict checks. One `Commit` action writes
+changed text, appends an optional comment, and approves the active language;
+`Reopen` restores the open status. Canonical return is handled by the dry-run
+and controlled apply tools in `50ohm-question-pool`.
