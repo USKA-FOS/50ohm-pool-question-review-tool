@@ -17,31 +17,50 @@ import main
 
 
 class CampaignBackendTests(unittest.TestCase):
-    def test_original_question_uses_immutable_canonical_source(self) -> None:
+    def test_original_question_uses_first_campaign_file_version_and_cache(self) -> None:
         manifest = {
-            "canonical_source": {
-                "repository": "USKA-FOS/50ohm-question-pool",
-                "revision": "canonical-commit",
-                "pool_path": "pool",
-            }
+            "question_ids": ["q_111111111111"],
         }
         expected = {"sha": "original-sha", "json": {"question": "Original?"}}
 
-        with patch.object(main, "fetch_repository_path", return_value=expected) as fetch:
-            result = main.fetch_original_question(
-                manifest,
-                "q_111111111111",
-                "fr",
-                "token",
-            )
+        with (
+            patch.object(main, "ORIGINAL_QUESTION_CACHE", {}),
+            patch.object(main, "oldest_campaign_commit_for_path", return_value="first-commit") as oldest,
+            patch.object(main, "fetch_path", return_value=expected) as fetch,
+        ):
+            first = main.fetch_original_question(manifest, "q_111111111111", "fr", "token")
+            second = main.fetch_original_question(manifest, "q_111111111111", "fr", "token")
 
-        self.assertEqual(result, expected)
-        fetch.assert_called_once_with(
-            "USKA-FOS/50ohm-question-pool",
-            "canonical-commit",
+        self.assertEqual(first, expected)
+        self.assertIs(second, first)
+        oldest.assert_called_once_with(
             "pool/questions/q_111111111111/question.fr.json",
             "token",
         )
+        fetch.assert_called_once_with(
+            "first-commit",
+            "pool/questions/q_111111111111/question.fr.json",
+            "token",
+        )
+
+    def test_oldest_campaign_commit_follows_last_page(self) -> None:
+        first_page = SimpleNamespace(
+            links={"last": {"url": "https://api.github.com/example?page=4"}},
+            raise_for_status=lambda: None,
+            json=lambda: [{"sha": "newest"}],
+        )
+        last_page = SimpleNamespace(
+            links={},
+            raise_for_status=lambda: None,
+            json=lambda: [{"sha": "oldest"}],
+        )
+
+        with patch.object(main, "github_request", side_effect=[first_page, last_page]) as request:
+            result = main.oldest_campaign_commit_for_path("pool/questions/q/question.fr.json", "token")
+
+        self.assertEqual(result, "oldest")
+        self.assertEqual(request.call_count, 2)
+        self.assertEqual(request.call_args_list[1].args[1], "https://api.github.com/example?page=4")
 
     def test_github_profiler_records_duration_without_payload(self) -> None:
         response = SimpleNamespace(

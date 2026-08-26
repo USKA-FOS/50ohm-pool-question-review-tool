@@ -63,9 +63,11 @@ only restores `to_be_reviewed`. All writes use the GitHub file SHA to reject
 concurrent changes.
 
 The rendered active-language panel compares the current campaign text with the
-original localized text at the immutable canonical commit recorded in
-`campaign.meta.json`. Insertions and deletions therefore remain visible after
-the correction has been committed.
+first Git version of that localized file in the campaign branch. This is the
+exact content copied during export and does not require the reviewer's OAuth
+token to access the separate canonical repository. Immutable originals are
+cached in memory after their first read. Insertions and deletions therefore
+remain visible after the correction has been committed.
 
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in

@@ -33,6 +33,9 @@ Les opérations possibles sont :
 - `contents.write` : création d'un commit GitHub par écriture de fichier ;
 - `commits.list` : lecture de l'historique d'un chemin pour déterminer un
   auteur ;
+- `commits.oldest` : résolution initiale de la version exportée d'un fichier
+  pour le diff ; cette résolution et le contenu original sont ensuite mis en
+  cache ;
 - `rate_limit.read` : lecture du quota GitHub ;
 - `oauth.token` et `oauth.user` : authentification GitHub.
 

@@ -41,6 +41,7 @@ REVIEW_STATUSES = ('to_be_reviewed', 'approved')
 PROFILE_REQUEST_ID = ContextVar('profile_request_id', default='-')
 PROFILE_EVENTS = ContextVar('profile_events', default=None)
 LOGGER = logging.getLogger('uvicorn.error')
+ORIGINAL_QUESTION_CACHE = {}
 
 required_config = {
     'GITHUB_CLIENT_ID': CLIENT_ID,
@@ -262,17 +263,45 @@ def fetch_path(ref, path, token):
     return fetch_repository_path(f'{OWNER}/{REPO}', ref, path, token)
 
 
+def oldest_campaign_commit_for_path(path, token):
+    response = github_request(
+        'GET',
+        f'https://api.github.com/repos/{OWNER}/{REPO}/commits',
+        operation='commits.oldest',
+        resource=path,
+        params={'sha': CAMPAIGN_BRANCH, 'path': path, 'per_page': 1},
+        headers=github_headers(token),
+        timeout=15,
+    )
+    response.raise_for_status()
+    last_url = response.links.get('last', {}).get('url')
+    if last_url:
+        if not last_url.startswith('https://api.github.com/'):
+            raise ValueError('GitHub returned an invalid commit pagination URL.')
+        response = github_request(
+            'GET',
+            last_url,
+            operation='commits.oldest',
+            resource=path,
+            headers=github_headers(token),
+            timeout=15,
+        )
+        response.raise_for_status()
+    commits = response.json()
+    if not isinstance(commits, list) or len(commits) != 1 or not commits[0].get('sha'):
+        raise ValueError(f'Cannot resolve the original campaign commit for {path}.')
+    return commits[0]['sha']
+
+
 def fetch_original_question(manifest, question_id, language, token):
-    source = manifest.get('canonical_source')
-    if not isinstance(source, dict):
-        raise ValueError('Campaign has no canonical_source object.')
-    repository = source.get('repository')
-    revision = source.get('revision')
-    pool_path = source.get('pool_path')
-    if not all(isinstance(value, str) and value for value in (repository, revision, pool_path)):
-        raise ValueError('Campaign canonical_source is incomplete.')
-    path = f'{pool_path.rstrip("/")}/questions/{question_id}/question.{language}.json'
-    return fetch_repository_path(repository, revision, path, token)
+    if question_id not in manifest.get('question_ids', []):
+        raise ValueError(f'Question {question_id} is outside the campaign scope.')
+    path = f'pool/questions/{question_id}/question.{language}.json'
+    cache_key = (CAMPAIGN_BRANCH, path)
+    if cache_key not in ORIGINAL_QUESTION_CACHE:
+        original_commit = oldest_campaign_commit_for_path(path, token)
+        ORIGINAL_QUESTION_CACHE[cache_key] = fetch_path(original_commit, path, token)
+    return ORIGINAL_QUESTION_CACHE[cache_key]
 
 
 def update_path(path, payload, sha, message, token):
