@@ -74,8 +74,8 @@ proposés ensemble à la réintégration canonical.
 
 - l'import réel reste une commande opérateur séparée et ne déclenche ni build,
   ni commit, ni publication automatiquement ;
-- les médias sont encore affichés par les URL du site existant plutôt que lus
-  au commit enregistré dans `media.refs.json` ;
+- les médias sont lus depuis le dépôt public au commit immuable enregistré dans
+  `media.refs.json` ; un dépôt média privé nécessiterait un proxy authentifié ;
 - les commentaires peuvent être ajoutés avec `Commit`, mais pas modifiés ou
   supprimés depuis l'interface.
 

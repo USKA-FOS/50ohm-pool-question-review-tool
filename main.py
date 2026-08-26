@@ -6,6 +6,8 @@ import hashlib
 from io import BytesIO
 import json
 import logging
+from pathlib import Path
+import re
 import secrets
 import tarfile
 import threading
@@ -618,6 +620,53 @@ def canonical_to_legacy_question(payload):
     }
 
 
+def media_url(media_manifest, media_id, language):
+    if media_id is None:
+        return None
+    if type(media_id) is not int or media_id <= 0:
+        raise ValueError(f'Invalid question media id: {media_id!r}.')
+    if media_manifest.get('schema_version') != 1:
+        raise ValueError('Unsupported media manifest schema_version.')
+    repository = media_manifest.get('repository')
+    revision = media_manifest.get('revision')
+    if (
+        not isinstance(repository, str)
+        or len(repository.split('/')) != 2
+        or not all(repository.split('/'))
+        or not isinstance(revision, str)
+        or re.fullmatch(r'[0-9a-f]{40}', revision) is None
+    ):
+        raise ValueError('Campaign media repository or revision is invalid.')
+    item = media_manifest.get('items', {}).get(str(media_id))
+    if not isinstance(item, dict):
+        raise ValueError(f'Campaign media manifest has no item {media_id}.')
+    variant = item.get('variants', {}).get(language)
+    if not isinstance(variant, dict):
+        raise ValueError(f'Campaign media item {media_id} has no {language} variant.')
+    path = variant.get('path')
+    if (
+        not isinstance(path, str)
+        or not path
+        or path.startswith('/')
+        or '..' in Path(path).parts
+        or variant.get('media_type') != 'image/svg+xml'
+    ):
+        raise ValueError(f'Campaign media item {media_id}/{language} has an invalid path or type.')
+    owner, repo = repository.split('/')
+    return (
+        'https://raw.githubusercontent.com/'
+        f'{quote(owner, safe="")}/{quote(repo, safe="")}/'
+        f'{quote(revision, safe="")}/{quote(path, safe="/")}'
+    )
+
+
+def question_media_urls(question, language, media_manifest):
+    return {
+        field: media_url(media_manifest, question[field], language)
+        for field in ('picture_question', 'picture_a', 'picture_b', 'picture_c', 'picture_d')
+    }
+
+
 def content_with_edits(content, question_id, language, values):
     if content.get('question_id') != question_id:
         raise ValueError('Question content id does not match its directory.')
@@ -919,6 +968,7 @@ def edit_question(request: Request, key: str):
             token,
         )
         data_original = fetch_original_question(manifest, question_id, review_language, token)
+        media_manifest = fetch_path(CAMPAIGN_BRANCH, 'media.refs.json', token)['json']
         data_meta = fetch_path(
             CAMPAIGN_BRANCH,
             f'pool/questions/{question_id}/question.meta.json',
@@ -927,6 +977,8 @@ def edit_question(request: Request, key: str):
         reference = canonical_to_legacy_question(data_reference['json'])
         review = canonical_to_legacy_question(data_review['json'])
         original = canonical_to_legacy_question(data_original['json'])
+        reference_media = question_media_urls(reference, reference_language, media_manifest)
+        review_media = question_media_urls(review, review_language, media_manifest)
         review_status = data_meta['json'].get('review', {}).get(review_language)
         meta_path = f'pool/questions/{question_id}/question.meta.json'
         review_status_author = status_author(meta_path, review_language, token)
@@ -941,6 +993,8 @@ def edit_question(request: Request, key: str):
             'key': key,
             'reference': reference,
             'review': review,
+            'reference_media': reference_media,
+            'review_media': review_media,
             'diff': word_diff(original, review),
             'sha': data_review['sha'],
             'meta_sha': data_meta['sha'],

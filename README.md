@@ -86,6 +86,11 @@ content copied during export and does not require the reviewer's OAuth token to
 access the separate canonical repository. Insertions and deletions therefore
 remain visible after the correction has been committed.
 
+Question drawings are resolved from `media.refs.json` and loaded from the
+public media repository at the exact immutable commit recorded by the campaign.
+The interface does not infer a published-site image URL from the numeric media
+identifier.
+
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
 the table-of-contents page and carried through every navigation link. They may

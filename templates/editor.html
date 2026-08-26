@@ -15,36 +15,36 @@
             {# TODO: Move to separate file #}
             <div class="card-body">
                 <p class="card-text">{{ diff.question | render_diff | safe}}</p>
-                {% if review.picture_question is not none %}
-                <img class="d-block mx-auto" src="https://50ohm.uska.online/images_{{review_language}}/{{review.picture_question}}.svg">
+                {% if review_media.picture_question is not none %}
+                <img class="question-media d-block mx-auto" src="{{ review_media.picture_question }}" alt="Question diagram {{ review.picture_question }}">
                 {% endif %}
                 <fieldset>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qf.0" name="qf" value="0" disabled checked>
                         <label for="qf.0">{{ diff.answer_a | render_diff | safe }}</label>
-                        {% if review.picture_a is not none %}
-                        <img src="https://50ohm.uska.online/images_{{review_language}}/{{review.picture_a}}.svg">
+                        {% if review_media.picture_a is not none %}
+                        <img class="question-media" src="{{ review_media.picture_a }}" alt="Answer A diagram {{ review.picture_a }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qf.1" name="qf" value="1" disabled>
                         <label for="qf.1">{{ diff.answer_b | render_diff | safe }}</label>
-                        {% if review.picture_b is not none %}
-                        <img src="https://50ohm.uska.online/images_{{review_language}}/{{review.picture_b}}.svg">
+                        {% if review_media.picture_b is not none %}
+                        <img class="question-media" src="{{ review_media.picture_b }}" alt="Answer B diagram {{ review.picture_b }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qf.2" name="qf" value="2" disabled>
                         <label for="qf.2">{{ diff.answer_c | render_diff | safe }}</label>
-                        {% if review.picture_c is not none %}
-                        <img src="https://50ohm.uska.online/images_{{review_language}}/{{review.picture_c}}.svg">
+                        {% if review_media.picture_c is not none %}
+                        <img class="question-media" src="{{ review_media.picture_c }}" alt="Answer C diagram {{ review.picture_c }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qf.3" name="qf" value="3" disabled>
                         <label for="qf.3">{{ diff.answer_d | render_diff |safe }}</label>
-                        {% if review.picture_d is not none %}
-                        <img src="https://50ohm.uska.online/images_{{review_language}}/{{review.picture_d}}.svg">
+                        {% if review_media.picture_d is not none %}
+                        <img class="question-media" src="{{ review_media.picture_d }}" alt="Answer D diagram {{ review.picture_d }}">
                         {% endif %}
                     </div>
                 </fieldset>
@@ -56,36 +56,36 @@
             <div class="card-header"><h4>{{ reference_language_label }} (Reference)</h4></div>
             <div class="card-body">
                 <p class="card-text">{{ reference.question }}</p>
-                {% if reference.picture_question is not none %}
-                <img class="d-block mx-auto" src="https://50ohm.uska.online/images_{{reference_language}}/{{reference.picture_question}}.svg">
+                {% if reference_media.picture_question is not none %}
+                <img class="question-media d-block mx-auto" src="{{ reference_media.picture_question }}" alt="Question diagram {{ reference.picture_question }}">
                 {% endif %}
                 <fieldset>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qg.0" name="qg" value="0" disabled checked>
                         <label for="qg.0">{{ reference.answer_a or '' }}</label>
-                        {% if reference.picture_a is not none %}
-                        <img src="https://50ohm.uska.online/images_{{reference_language}}/{{reference.picture_a}}.svg">
+                        {% if reference_media.picture_a is not none %}
+                        <img class="question-media" src="{{ reference_media.picture_a }}" alt="Answer A diagram {{ reference.picture_a }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qg.1" name="qg" value="1" disabled>
                         <label for="qg.1">{{ reference.answer_b or '' }}</label>
-                        {% if reference.picture_b is not none %}
-                        <img src="https://50ohm.uska.online/images_{{reference_language}}/{{reference.picture_b}}.svg">
+                        {% if reference_media.picture_b is not none %}
+                        <img class="question-media" src="{{ reference_media.picture_b }}" alt="Answer B diagram {{ reference.picture_b }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qg.2" name="qg" value="2" disabled>
                         <label for="qg.2">{{ reference.answer_c or '' }}</label>
-                        {% if reference.picture_c is not none %}
-                        <img src="https://50ohm.uska.online/images_{{reference_language}}/{{reference.picture_c}}.svg">
+                        {% if reference_media.picture_c is not none %}
+                        <img class="question-media" src="{{ reference_media.picture_c }}" alt="Answer C diagram {{ reference.picture_c }}">
                         {% endif %}
                     </div>
                     <div class="form-check d-flex align-items-start mb-3">
                         <input class="me-2 mt-1" type="radio" id="qg.3" name="qg" value="3" disabled>
                         <label for="qg.3">{{ reference.answer_d or '' }}</label>
-                        {% if reference.picture_d is not none %}
-                        <img src="https://50ohm.uska.online/images_{{reference_language}}/{{reference.picture_d}}.svg">
+                        {% if reference_media.picture_d is not none %}
+                        <img class="question-media" src="{{ reference_media.picture_d }}" alt="Answer D diagram {{ reference.picture_d }}">
                         {% endif %}
                     </div>
                 </fieldset>

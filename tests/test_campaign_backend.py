@@ -234,6 +234,37 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(updated["picture_question_url"], 101)
         self.assertEqual(content["question"], "Domanda?")
 
+    def test_media_urls_use_the_immutable_campaign_manifest(self) -> None:
+        manifest = {
+            "schema_version": 1,
+            "repository": "USKA-FOS/50ohm-contents-ch",
+            "revision": "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa",
+            "items": {
+                "202": {
+                    "kind": "drawing",
+                    "variants": {
+                        "fr": {
+                            "path": "canonical/drawings/dr_example/202.fr.svg",
+                            "source_language": "fr",
+                            "media_type": "image/svg+xml",
+                        }
+                    },
+                }
+            },
+        }
+
+        url = main.media_url(manifest, 202, "fr")
+
+        self.assertEqual(
+            url,
+            "https://raw.githubusercontent.com/USKA-FOS/50ohm-contents-ch/"
+            "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa/"
+            "canonical/drawings/dr_example/202.fr.svg",
+        )
+        self.assertIsNone(main.media_url(manifest, None, "fr"))
+        with self.assertRaisesRegex(ValueError, "no it variant"):
+            main.media_url(manifest, 202, "it")
+
     def test_campaign_load_builds_toc_and_marks_approved_questions(self) -> None:
         manifest = {
             "campaign_branch": "campaign/test",
@@ -438,6 +469,20 @@ class CampaignBackendTests(unittest.TestCase):
             "key": "NF101",
             "reference": question,
             "review": question,
+            "reference_media": {
+                "picture_question": None,
+                "picture_a": None,
+                "picture_b": "https://raw.githubusercontent.com/example/media/revision/202.de.svg",
+                "picture_c": None,
+                "picture_d": None,
+            },
+            "review_media": {
+                "picture_question": None,
+                "picture_a": None,
+                "picture_b": "https://raw.githubusercontent.com/example/media/revision/202.fr.svg",
+                "picture_c": None,
+                "picture_d": None,
+            },
             "diff": main.word_diff(
                 {**question, "question": "Original question?"},
                 question,
@@ -459,7 +504,11 @@ class CampaignBackendTests(unittest.TestCase):
         }
         editor_template = main.templates.get_template("editor.html")
         editor_html = editor_template.render(**editor_context)
-        self.assertIn("images_fr/202.svg", editor_html)
+        self.assertIn(
+            "https://raw.githubusercontent.com/example/media/revision/202.fr.svg",
+            editor_html,
+        )
+        self.assertNotIn("50ohm.uska.online", editor_html)
         self.assertIn("German (Reference)", editor_html)
         self.assertIn("diff removed", editor_html)
         self.assertIn("diff added", editor_html)

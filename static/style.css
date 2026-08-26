@@ -72,6 +72,11 @@ button, a.btn {
     padding-left: 20px;
 }
 
+.question-media {
+    height: auto;
+    max-width: 100%;
+}
+
 
 /* Responsive layout fixes */
 @media (max-width: 768px) {

@@ -167,9 +167,9 @@ Campaign comments and generated navigation are never canonical input.
 - All reviewers share one branch. Git prevents silent overwrites, but the tool
   has no reservation or question-lock mechanism.
 - Comments are append-only in the interface and cannot be edited or deleted.
-- The editor currently displays drawing URLs from the deployed 50ohm site; it
-  does not fetch media assets from the immutable media commit in
-  `media.refs.json`.
+- Drawing display requires the public GitHub raw-content service. URLs are
+  resolved from `media.refs.json` at its immutable media commit; private media
+  repositories are not currently proxied through the reviewer OAuth token.
 - Chapter data, drawings, and photos are read-only campaign context.
 - The application does not run technical correctness checks, linguistic AI
   audits, canonical builds, commits, pushes, or site publication.
