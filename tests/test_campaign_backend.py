@@ -17,6 +17,42 @@ import main
 
 
 class CampaignBackendTests(unittest.TestCase):
+    def test_github_profiler_records_duration_without_payload(self) -> None:
+        response = SimpleNamespace(
+            status_code=200,
+            headers={
+                "x-github-request-id": "github-request",
+                "x-ratelimit-remaining": "4999",
+            },
+        )
+        events = []
+        events_token = main.PROFILE_EVENTS.set(events)
+        request_token = main.PROFILE_REQUEST_ID.set("request-1")
+        try:
+            with (
+                patch.object(main, "GITHUB_PROFILE", True),
+                patch.object(main.requests, "request", return_value=response) as request_call,
+                patch.object(main.time, "perf_counter", side_effect=[10.0, 10.125]),
+                patch.object(main.LOGGER, "info") as log_info,
+            ):
+                result = main.github_request(
+                    "GET",
+                    "https://api.github.com/example",
+                    operation="contents.read",
+                    resource="campaign.meta.json",
+                    headers={"Authorization": "Bearer secret"},
+                )
+        finally:
+            main.PROFILE_REQUEST_ID.reset(request_token)
+            main.PROFILE_EVENTS.reset(events_token)
+
+        self.assertIs(result, response)
+        self.assertEqual(events[0]["operation"], "contents.read")
+        self.assertEqual(events[0]["resource"], "campaign.meta.json")
+        self.assertEqual(events[0]["duration_ms"], 125.0)
+        self.assertNotIn("secret", str(log_info.call_args))
+        request_call.assert_called_once()
+
     def test_canonical_question_is_adapted_without_changing_null(self) -> None:
         payload = {
             "question": "Question?",

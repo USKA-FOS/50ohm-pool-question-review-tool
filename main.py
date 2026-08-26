@@ -1,7 +1,11 @@
 import os
 import base64
+from collections import defaultdict
+from contextvars import ContextVar
 import json
+import logging
 import secrets
+import time
 from urllib.parse import urlencode
 import requests
 from fastapi import FastAPI, Request, Depends, Form
@@ -26,6 +30,7 @@ REPO = os.getenv('GITHUB_REPO')
 CAMPAIGN_BRANCH = os.getenv('CAMPAIGN_BRANCH')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
 SESSION_SECRET = os.getenv('SESSION_SECRET')
+GITHUB_PROFILE = os.getenv('GITHUB_PROFILE', 'false').lower() == 'true'
 SCOPE = 'repo'
 LANGUAGE_LABELS = {
     'de': 'German',
@@ -33,6 +38,9 @@ LANGUAGE_LABELS = {
     'it': 'Italian',
 }
 REVIEW_STATUSES = ('to_be_reviewed', 'approved')
+PROFILE_REQUEST_ID = ContextVar('profile_request_id', default='-')
+PROFILE_EVENTS = ContextVar('profile_events', default=None)
+LOGGER = logging.getLogger('uvicorn.error')
 
 required_config = {
     'GITHUB_CLIENT_ID': CLIENT_ID,
@@ -56,6 +64,100 @@ app.add_middleware(
 )
 app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
+
+
+def record_github_profile(operation, resource, duration_ms, status):
+    event = {
+        'operation': operation,
+        'resource': resource,
+        'duration_ms': duration_ms,
+        'status': status,
+    }
+    events = PROFILE_EVENTS.get()
+    if events is not None:
+        events.append(event)
+    return event
+
+
+def github_request(method, url, operation, resource='', **kwargs):
+    started = time.perf_counter()
+    try:
+        response = requests.request(method, url, **kwargs)
+    except requests.exceptions.RequestException as exc:
+        duration_ms = (time.perf_counter() - started) * 1000
+        if GITHUB_PROFILE:
+            record_github_profile(operation, resource, duration_ms, 'error')
+            LOGGER.info(
+                '[github_profile] request_id=%s method=%s operation=%s resource=%s '
+                'status=error duration_ms=%.1f error=%s',
+                PROFILE_REQUEST_ID.get(),
+                method,
+                operation,
+                resource or '-',
+                duration_ms,
+                type(exc).__name__,
+            )
+        raise
+
+    duration_ms = (time.perf_counter() - started) * 1000
+    if GITHUB_PROFILE:
+        record_github_profile(operation, resource, duration_ms, response.status_code)
+        LOGGER.info(
+            '[github_profile] request_id=%s method=%s operation=%s resource=%s '
+            'status=%s duration_ms=%.1f github_request_id=%s rate_remaining=%s',
+            PROFILE_REQUEST_ID.get(),
+            method,
+            operation,
+            resource or '-',
+            response.status_code,
+            duration_ms,
+            response.headers.get('x-github-request-id', '-'),
+            response.headers.get('x-ratelimit-remaining', '-'),
+        )
+    return response
+
+
+@app.middleware('http')
+async def profile_http_request(request: Request, call_next):
+    if not GITHUB_PROFILE:
+        return await call_next(request)
+
+    request_id_token = PROFILE_REQUEST_ID.set(secrets.token_hex(4))
+    events_token = PROFILE_EVENTS.set([])
+    started = time.perf_counter()
+    response = None
+    try:
+        response = await call_next(request)
+        return response
+    finally:
+        duration_ms = (time.perf_counter() - started) * 1000
+        events = PROFILE_EVENTS.get() or []
+        github_ms = sum(event['duration_ms'] for event in events)
+        grouped = defaultdict(lambda: {'count': 0, 'duration_ms': 0.0})
+        for event in events:
+            grouped[event['operation']]['count'] += 1
+            grouped[event['operation']]['duration_ms'] += event['duration_ms']
+        breakdown = ','.join(
+            f'{operation}:{values["count"]}/{values["duration_ms"]:.1f}ms'
+            for operation, values in sorted(grouped.items())
+        ) or '-'
+        status = response.status_code if response is not None else 500
+        LOGGER.info(
+            '[request_profile] request_id=%s method=%s path=%s status=%s '
+            'duration_ms=%.1f github_calls=%s github_ms=%.1f breakdown=%s',
+            PROFILE_REQUEST_ID.get(),
+            request.method,
+            request.url.path,
+            status,
+            duration_ms,
+            len(events),
+            github_ms,
+            breakdown,
+        )
+        if response is not None:
+            response.headers['Server-Timing'] = f'app;dur={duration_ms:.1f}, github;dur={github_ms:.1f}'
+        PROFILE_EVENTS.reset(events_token)
+        PROFILE_REQUEST_ID.reset(request_id_token)
 
 # custom Jinja filter to render word diffs
 def render_diff(diff):
@@ -134,8 +236,11 @@ def b64encode(data):
 
 
 def fetch_path(ref, path, token):
-    r = requests.get(
+    r = github_request(
+        'GET',
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
+        operation='contents.read',
+        resource=path,
         params={'ref': ref},
         headers=github_headers(token),
         timeout=15,
@@ -159,8 +264,11 @@ def update_path(path, payload, sha, message, token):
     }
     if sha is not None:
         request_payload['sha'] = sha
-    response = requests.put(
+    response = github_request(
+        'PUT',
         f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
+        operation='contents.write',
+        resource=path,
         headers=github_headers(token),
         json=request_payload,
         timeout=15,
@@ -179,8 +287,11 @@ def fetch_optional_path(ref, path, token):
 
 
 def github_commits_for_path(path, token):
-    response = requests.get(
+    response = github_request(
+        'GET',
         f'https://api.github.com/repos/{OWNER}/{REPO}/commits',
+        operation='commits.list',
+        resource=path,
         params={'sha': CAMPAIGN_BRANCH, 'path': path, 'per_page': 100},
         headers=github_headers(token),
         timeout=15,
@@ -390,8 +501,10 @@ def index(request: Request):
                 request.query_params.get('reference_language'),
                 request.query_params.get('review_language'),
             )
-            r = requests.get(
+            r = github_request(
+                'GET',
                 f'https://api.github.com/rate_limit',
+                operation='rate_limit.read',
                 headers=github_headers(get_token(request)),
             )
             r.raise_for_status()
@@ -452,8 +565,10 @@ def auth_callback(code: str, state: str, request: Request):
     if not expected_state or not secrets.compare_digest(state, expected_state):
         return HTMLResponse('<h1>Invalid OAuth state</h1>', status_code=400)
 
-    resp = requests.post(
+    resp = github_request(
+        'POST',
         'https://github.com/login/oauth/access_token',
+        operation='oauth.token',
         headers={'Accept': 'application/json'},
         data={
             'client_id': CLIENT_ID,
@@ -470,8 +585,10 @@ def auth_callback(code: str, state: str, request: Request):
     request.session['token'] = token
 
     # Store username
-    user_resp = requests.get(
+    user_resp = github_request(
+        'GET',
         'https://api.github.com/user',
+        operation='oauth.user',
         headers=github_headers(token),
         timeout=15,
     )

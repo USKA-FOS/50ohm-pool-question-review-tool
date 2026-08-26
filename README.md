@@ -37,11 +37,22 @@ docker run --rm --detach \
   --env CAMPAIGN_BRANCH=campaign/multilingual-empfaenger-sinus-signals-example \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
+  --env GITHUB_PROFILE=true \
   50ohm-question-review-tool:multilingual-review
 ```
 
 The server is then available at `http://localhost:8080`. Its health endpoint
 is `http://localhost:8080/healthz`.
+
+With profiling enabled, follow only the timing lines with:
+
+```bash
+docker logs --follow 50ohm-question-review-local 2>&1 \
+  | grep -E '\[(github|request)_profile\]'
+```
+
+See [GitHub operation profiling](docs/GITHUB_PROFILING.md) for the log format
+and interpretation.
 
 The current campaign integration reads the multilingual campaign and its
 derived table of contents directly through the GitHub API. An open question is
