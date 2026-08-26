@@ -38,6 +38,7 @@ docker run --rm --detach \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
   --env GITHUB_PROFILE=true \
+  --env CAMPAIGN_REFRESH_SECONDS=30 \
   50ohm-question-review-tool:multilingual-review
 ```
 
@@ -53,20 +54,22 @@ docker logs --follow 50ohm-question-review-local 2>&1 \
 
 See [GitHub operation profiling](docs/GITHUB_PROFILING.md) for the log format
 and interpretation.
+The cache and write invariants are documented in
+[Campaign cache and atomic writes](docs/CAMPAIGN_CACHE_AND_WRITES.md).
 
-The current campaign integration reads the multilingual campaign and its
-derived table of contents directly through the GitHub API. An open question is
-completed with one `Commit` action: it writes changed text in the active
-language, appends an optional working comment, and sets
-`review.<language>` to `approved`. An approved question exposes `Reopen`, which
-only restores `to_be_reviewed`. All writes use the GitHub file SHA to reject
-concurrent changes.
+The current campaign integration loads the current branch and its original
+export as two GitHub archives, then serves navigation and question reads from
+an in-memory snapshot. The remote branch head is checked at most once per
+`CAMPAIGN_REFRESH_SECONDS`. An open question is completed with one `Commit`
+action: one atomic GraphQL commit writes changed text in the active language,
+appends an optional working comment, and sets `review.<language>` to
+`approved`. An approved question exposes `Reopen`, which only restores
+`to_be_reviewed`. The expected branch-head SHA rejects concurrent changes.
 
 The rendered active-language panel compares the current campaign text with the
-first Git version of that localized file in the campaign branch. This is the
-exact content copied during export and does not require the reviewer's OAuth
-token to access the separate canonical repository. Immutable originals are
-cached in memory after their first read. Insertions and deletions therefore
+export snapshot that introduced `campaign.meta.json`. This is the exact
+content copied during export and does not require the reviewer's OAuth token to
+access the separate canonical repository. Insertions and deletions therefore
 remain visible after the correction has been committed.
 
 After GitHub login, the interface reads `languages` and `editable_languages`

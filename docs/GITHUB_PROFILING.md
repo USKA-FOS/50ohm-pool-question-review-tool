@@ -29,14 +29,13 @@ Chaque appel produit une ligne `github_profile` :
 
 Les opérations possibles sont :
 
-- `contents.read` : lecture d'un fichier à un commit ou sur la branche ;
-- `contents.write` : création d'un commit GitHub par écriture de fichier ;
+- `branch.read` : contrôle périodique du SHA de tête de campagne ;
+- `archive.read` : téléchargement initial ou rafraîchissement d'un snapshot ;
+- `contents.read` : lecture historique ponctuelle d'un fichier ;
+- `commit.write` : commit GraphQL atomique d'un ou plusieurs fichiers ;
 - `commits.list` : lecture de l'historique d'un chemin pour déterminer un
   auteur ;
-- `commits.oldest` : résolution initiale de la version exportée d'un fichier
-  pour le diff ; cette résolution et le contenu original sont ensuite mis en
-  cache ;
-- `rate_limit.read` : lecture du quota GitHub ;
+- `commits.oldest` : résolution initiale du commit d'export de la campagne ;
 - `oauth.token` et `oauth.user` : authentification GitHub.
 
 `request_id` relie les appels appartenant au même chargement de page ou à la
@@ -63,11 +62,12 @@ totale et GitHub, visible dans les outils de développement du navigateur.
 
 Comparer en priorité :
 
-1. le nombre de `contents.read` par affichage de question ;
-2. le coût de `commits.list` et des lectures historiques utilisées pour les
+1. l'absence d'appel GitHub pendant une navigation avec un cache chaud ;
+2. le coût initial de `archive.read` ;
+3. le coût de `commits.list` et des lectures historiques utilisées pour les
    auteurs ;
-3. le nombre de `contents.write` d'un `Commit` avec ou sans commentaire ;
-4. la différence entre `duration_ms` et `github_ms`, qui représente le rendu et
+4. l'unique `commit.write` d'un `Commit` avec ou sans commentaire ;
+5. la différence entre `duration_ms` et `github_ms`, qui représente le rendu et
    le traitement local.
 
 Ces mesures permettent ensuite de décider sur des faits s'il faut mettre en

@@ -7,6 +7,7 @@
 - [Contrat de campagne de révision, version 1](CAMPAIGN_CONTRACT_V1.fr.md)
 - [État intermédiaire de l'implémentation](INTERMEDIATE_IMPLEMENTATION_STATUS.fr.md)
 - [Profilage des opérations GitHub](GITHUB_PROFILING.md)
+- [Cache de campagne et écritures atomiques](CAMPAIGN_CACHE_AND_WRITES.md)
 
 The application is being adapted incrementally. It currently reads an exported
 canonical campaign from GitHub, displays its derived table of contents, and

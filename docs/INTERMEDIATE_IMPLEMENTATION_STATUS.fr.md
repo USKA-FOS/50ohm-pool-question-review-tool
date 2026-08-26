@@ -31,6 +31,8 @@ proposés ensemble à la réintégration canonical.
 
 - authentification GitHub OAuth ;
 - lecture directe d'une branche de campagne privée ;
+- snapshot mémoire courant et original chargé par archives GitHub, avec
+  contrôle périodique du SHA de branche ;
 - table des matières et navigation entre questions et chapitres ;
 - affichage des textes, du LaTeX et des dessins ;
 - affichage des différences entre la première version Git du texte localisé
@@ -41,6 +43,7 @@ proposés ensemble à la réintégration canonical.
   éventuel et passer la langue active à `approved` ;
 - action `Reopen` pour remettre une langue approuvée à `to_be_reviewed` ;
 - contrôles SHA du contenu, des métadonnées et des commentaires avant écriture ;
+- commit GraphQL atomique du texte, du commentaire éventuel et du statut ;
 - attribution du statut au commit Git qui a réellement modifié la langue ;
 - ajout append-only de commentaires dans `reviews/<question_id>.json` avec
   contrôle SHA et attribution Git ;
