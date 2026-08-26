@@ -62,6 +62,11 @@ language, appends an optional working comment, and sets
 only restores `to_be_reviewed`. All writes use the GitHub file SHA to reject
 concurrent changes.
 
+The rendered active-language panel compares the current campaign text with the
+original localized text at the immutable canonical commit recorded in
+`campaign.meta.json`. Insertions and deletions therefore remain visible after
+the correction has been committed.
+
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
 the table-of-contents page and carried through every navigation link. They may

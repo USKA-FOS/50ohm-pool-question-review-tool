@@ -235,12 +235,15 @@ def b64encode(data):
     return base64.b64encode(data.encode('utf-8')).decode()
 
 
-def fetch_path(ref, path, token):
+def fetch_repository_path(repository, ref, path, token):
+    repository_parts = repository.split('/')
+    if len(repository_parts) != 2 or not all(repository_parts):
+        raise ValueError(f'Invalid GitHub repository name: {repository}.')
     r = github_request(
         'GET',
-        f'https://api.github.com/repos/{OWNER}/{REPO}/contents/{path}',
+        f'https://api.github.com/repos/{repository}/contents/{path}',
         operation='contents.read',
-        resource=path,
+        resource=f'{repository}:{path}',
         params={'ref': ref},
         headers=github_headers(token),
         timeout=15,
@@ -253,6 +256,23 @@ def fetch_path(ref, path, token):
         'sha': d['sha'],
         'json': parsed,
     }
+
+
+def fetch_path(ref, path, token):
+    return fetch_repository_path(f'{OWNER}/{REPO}', ref, path, token)
+
+
+def fetch_original_question(manifest, question_id, language, token):
+    source = manifest.get('canonical_source')
+    if not isinstance(source, dict):
+        raise ValueError('Campaign has no canonical_source object.')
+    repository = source.get('repository')
+    revision = source.get('revision')
+    pool_path = source.get('pool_path')
+    if not all(isinstance(value, str) and value for value in (repository, revision, pool_path)):
+        raise ValueError('Campaign canonical_source is incomplete.')
+    path = f'{pool_path.rstrip("/")}/questions/{question_id}/question.{language}.json'
+    return fetch_repository_path(repository, revision, path, token)
 
 
 def update_path(path, payload, sha, message, token):
@@ -614,7 +634,7 @@ def edit_question(request: Request, key: str):
         return RedirectResponse('/login')
 
     try:
-        _, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
+        manifest, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
             token,
             request.query_params.get('reference_language'),
             request.query_params.get('review_language'),
@@ -632,6 +652,7 @@ def edit_question(request: Request, key: str):
             f'pool/questions/{question_id}/question.{review_language}.json',
             token,
         )
+        data_original = fetch_original_question(manifest, question_id, review_language, token)
         data_meta = fetch_path(
             CAMPAIGN_BRANCH,
             f'pool/questions/{question_id}/question.meta.json',
@@ -639,6 +660,7 @@ def edit_question(request: Request, key: str):
         )
         reference = canonical_to_legacy_question(data_reference['json'])
         review = canonical_to_legacy_question(data_review['json'])
+        original = canonical_to_legacy_question(data_original['json'])
         review_status = data_meta['json'].get('review', {}).get(review_language)
         meta_path = f'pool/questions/{question_id}/question.meta.json'
         review_status_author = status_author(meta_path, review_language, token)
@@ -653,7 +675,7 @@ def edit_question(request: Request, key: str):
             'key': key,
             'reference': reference,
             'review': review,
-            'diff': word_diff(review, review),
+            'diff': word_diff(original, review),
             'sha': data_review['sha'],
             'meta_sha': data_meta['sha'],
             'review_status': review_status,

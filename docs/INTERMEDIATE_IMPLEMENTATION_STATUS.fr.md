@@ -33,6 +33,8 @@ proposés ensemble à la réintégration canonical.
 - lecture directe d'une branche de campagne privée ;
 - table des matières et navigation entre questions et chapitres ;
 - affichage des textes, du LaTeX et des dessins ;
+- affichage des différences entre le texte localisé original au commit
+  canonical d'export et le texte actuellement commité dans la campagne ;
 - sélection dynamique DE, FR ou IT comme référence et langue active ;
 - action unique `Commit` pour enregistrer le texte, ajouter le commentaire
   éventuel et passer la langue active à `approved` ;

@@ -17,6 +17,32 @@ import main
 
 
 class CampaignBackendTests(unittest.TestCase):
+    def test_original_question_uses_immutable_canonical_source(self) -> None:
+        manifest = {
+            "canonical_source": {
+                "repository": "USKA-FOS/50ohm-question-pool",
+                "revision": "canonical-commit",
+                "pool_path": "pool",
+            }
+        }
+        expected = {"sha": "original-sha", "json": {"question": "Original?"}}
+
+        with patch.object(main, "fetch_repository_path", return_value=expected) as fetch:
+            result = main.fetch_original_question(
+                manifest,
+                "q_111111111111",
+                "fr",
+                "token",
+            )
+
+        self.assertEqual(result, expected)
+        fetch.assert_called_once_with(
+            "USKA-FOS/50ohm-question-pool",
+            "canonical-commit",
+            "pool/questions/q_111111111111/question.fr.json",
+            "token",
+        )
+
     def test_github_profiler_records_duration_without_payload(self) -> None:
         response = SimpleNamespace(
             status_code=200,
@@ -255,7 +281,10 @@ class CampaignBackendTests(unittest.TestCase):
             "key": "NF101",
             "reference": question,
             "review": question,
-            "diff": main.word_diff(question, question),
+            "diff": main.word_diff(
+                {**question, "question": "Original question?"},
+                question,
+            ),
             "sha": "abc",
             "meta_sha": "def",
             "review_status": "to_be_reviewed",
@@ -275,6 +304,8 @@ class CampaignBackendTests(unittest.TestCase):
         editor_html = editor_template.render(**editor_context)
         self.assertIn("images_fr/202.svg", editor_html)
         self.assertIn("German (Reference)", editor_html)
+        self.assertIn("diff removed", editor_html)
+        self.assertIn("diff added", editor_html)
         self.assertIn(
             "/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
