@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 
 {% block content %}
+{% set review_open = review_status != 'approved' %}
 
 <h2>Question: <code>{{ key }}</code></h2>
 
@@ -94,19 +95,6 @@
     <div class="col-md-6">
         <h4>Status</h4>
         <p class="text-muted mb-2">Current: {{ review_status }} · changed by {{ review_status_author }}</p>
-        <form action="/status/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
-            <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
-            <div class="btn-group" role="group" aria-label="Review status">
-                {% for status in review_statuses %}
-                <button
-                    class="btn {% if status == review_status %}btn-primary{% else %}btn-outline-secondary{% endif %}"
-                    type="submit"
-                    name="status"
-                    value="{{ status }}"
-                >{{ review_status_labels[status] }}</button>
-                {% endfor %}
-            </div>
-        </form>
     </div>
     <div class="col-md-6">
         <h4>Comments</h4>
@@ -119,23 +107,18 @@
         {% else %}
         <p class="text-muted">No comments.</p>
         {% endif %}
-        <form action="/comment/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
-            <input type="hidden" name="comments_sha" value="{{ comments_sha }}">
-            <div class="input-group">
-                <input name="comment" class="form-control" required>
-                <button class="btn btn-outline-primary" type="submit">Add comment</button>
-            </div>
-        </form>
     </div>
 </div>
 
 <form action="/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
+    <input type="hidden" name="sha" value="{{ sha }}">
+    <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
+    <input type="hidden" name="comments_sha" value="{{ comments_sha }}">
     <div class="row my-3">
         <div class="col-md-6">
             <h4>Edit Question:</h4>
-            <input type="hidden" name="sha" value="{{ sha }}">
             <div class="mb-3">
-                <textarea name="question" class="form-control" rows="10">{{ review.question }}</textarea>
+                <textarea name="question" class="form-control" rows="10" {% if not review_open %}disabled{% endif %}>{{ review.question }}</textarea>
             </div>
         </div>
 
@@ -143,30 +126,42 @@
             <h4>Edit Answers:</h4>
             <div class="mb-2">
                 <label>A (✔)</label>
-                <input name="answer_a" class="form-control" value="{{ review.answer_a }}" {% if review.answer_a is none or review.answer_a == '' %}disabled{% endif %}>
+                <input name="answer_a" class="form-control" value="{{ review.answer_a }}" {% if not review_open or review.answer_a is none or review.answer_a == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>B (❌)</label>
-                <input name="answer_b" class="form-control" value="{{ review.answer_b }}" {% if review.answer_b is none or review.answer_b == '' %}disabled{% endif %}>
+                <input name="answer_b" class="form-control" value="{{ review.answer_b }}" {% if not review_open or review.answer_b is none or review.answer_b == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>C (❌)</label>
-                <input name="answer_c" class="form-control" value="{{ review.answer_c }}" {% if review.answer_c is none or review.answer_c == '' %}disabled{% endif %}>
+                <input name="answer_c" class="form-control" value="{{ review.answer_c }}" {% if not review_open or review.answer_c is none or review.answer_c == '' %}disabled{% endif %}>
             </div>
 
             <div class="mb-2">
                 <label>D (❌)</label>
-                <input name="answer_d" class="form-control" value="{{ review.answer_d }}"{% if review.answer_d is none or review.answer_d == '' %}disabled{% endif %}>
+                <input name="answer_d" class="form-control" value="{{ review.answer_d }}"{% if not review_open or review.answer_d is none or review.answer_d == '' %}disabled{% endif %}>
             </div>
         </div>
     </div>
+    {% if review_open %}
+    <div class="row my-3">
+        <div class="col-md-6 offset-md-6">
+            <label for="commit-comment" class="form-label">Comment (optional)</label>
+            <textarea id="commit-comment" name="comment" class="form-control" rows="3"></textarea>
+        </div>
+    </div>
+    {% endif %}
     <div class="row my-3">
         <div class="col d-flex justify-content-center gap-2">
             <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>
             <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Question ←</a>
-            <button class="btn btn-secondary" disabled>Save text</button>
+            {% if review_open %}
+            <button class="btn btn-success" type="submit" name="action" value="commit">Commit</button>
+            {% else %}
+            <button class="btn btn-outline-secondary" type="submit" name="action" value="reopen">Reopen</button>
+            {% endif %}
             <a class="btn btn-primary {%if next_question is none %}disabled{%endif%}" role="button" href="/edit/{{next_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >→ Next Question</a>
             <a class="btn btn-primary {%if next_section is none %}disabled{%endif%}" role="button" href="/edit/{{next_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >→→ Next Section</a>
         </div>

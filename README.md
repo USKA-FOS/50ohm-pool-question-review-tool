@@ -37,18 +37,19 @@ docker run --rm --detach \
   --env CAMPAIGN_BRANCH=campaign/multilingual-empfaenger-sinus-signals-example \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
-  50ohm-question-review-tool:campaign-readonly
+  50ohm-question-review-tool:multilingual-review
 ```
 
 The server is then available at `http://localhost:8080`. Its health endpoint
 is `http://localhost:8080/healthz`.
 
 The current campaign integration reads the multilingual campaign and its
-derived table of contents directly through the GitHub API. The first write
-stage supports approval only: it can change `review.<language>` to `approved`
-in `question.meta.json` after checking both the localized-content SHA and the
-metadata SHA. Submitted text changes and comments are rejected until their
-separate write paths are implemented.
+derived table of contents directly through the GitHub API. An open question is
+completed with one `Commit` action: it writes changed text in the active
+language, appends an optional working comment, and sets
+`review.<language>` to `approved`. An approved question exposes `Reopen`, which
+only restores `to_be_reviewed`. All writes use the GitHub file SHA to reject
+concurrent changes.
 
 After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
@@ -58,15 +59,18 @@ Only a language listed in `editable_languages` can be selected for review. The
 current example campaign exports and makes editable German, French, and
 Italian, so all nine reference/review combinations are available.
 
-Statuses are direct choices, not a state machine. A reviewer may set the
-selected language to `to_be_reviewed`, `approved`, or `rejected` from any
-current value. The interface resolves the author from the latest Git commit
-that actually changed that language's status.
+The interface does not expose separate status or comment actions. `Commit` and
+`Reopen` are the complete reviewer workflow. Rejecting a proposed correction
+means committing the original text. The interface resolves the reviewer from
+the latest Git commit that actually changed that language's status.
 
-Comments are append-only working notes stored outside canonical question data
-under `reviews/<question_id>.json`. Each addition is a separate SHA-checked Git
-commit, and the displayed author is derived from the commit that introduced
-that comment.
+Comments are optional append-only working notes stored outside canonical
+question data under `reviews/<question_id>.json`. They are submitted with
+`Commit`, and the displayed author is derived from the commit that introduced
+the comment.
+
+Forms and internal navigation display a blocking `Working with GitHub...`
+indicator while the synchronous GitHub operation is running.
 
 Previous/next question navigation stays inside the displayed chapter.
 Previous/next section navigation follows the complete ordered list of selected
@@ -78,10 +82,9 @@ derived navigation index is not updated by reviewers. The editor therefore
 shows the current status loaded from metadata; table-of-contents progress is
 still based on the export snapshot in this intermediate implementation.
 
-The approval-only path was verified end to end with `AB301/fr`: the GitHub
-commit changed only its metadata status, and the canonical importer dry-run
-reported one ready item, 41 not-approved items, no conflicts, no invalid items,
-and `canonical_write_performed=false`.
+The earlier approval-only path was verified end to end with `AB301/fr`: the
+canonical importer dry-run reported one ready item, 41 not-approved items, no
+conflicts, no invalid items, and `canonical_write_performed=false`.
 
 For a private organization repository, the OAuth application must be granted
 access to that organization. Otherwise authentication succeeds but campaign

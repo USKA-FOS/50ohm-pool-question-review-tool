@@ -37,23 +37,51 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(adapted["picture_question"], 101)
         self.assertEqual(adapted["picture_b"], 102)
 
-    def test_status_change_is_free_and_changes_only_requested_language(self) -> None:
+    def test_status_change_preserves_other_languages(self) -> None:
         meta = {
             "id": "q_111111111111",
             "review": {"de": "approved", "fr": "to_be_reviewed", "it": "rejected"},
             "external_refs": [],
         }
 
-        rejected = main.meta_with_status(meta, "q_111111111111", "fr", "rejected")
-        reopened = main.meta_with_status(rejected, "q_111111111111", "fr", "to_be_reviewed")
+        reopened = main.meta_with_status(meta, "q_111111111111", "fr", "to_be_reviewed")
         approved = main.meta_with_status(reopened, "q_111111111111", "fr", "approved")
 
         self.assertEqual(approved["review"]["fr"], "approved")
         self.assertEqual(approved["review"]["it"], "rejected")
         self.assertEqual(meta["review"]["fr"], "to_be_reviewed")
 
-        self.assertEqual(rejected["review"]["fr"], "rejected")
         self.assertEqual(reopened["review"]["fr"], "to_be_reviewed")
+
+    def test_content_edits_preserve_metadata_media_and_null(self) -> None:
+        content = {
+            "question_id": "q_111111111111",
+            "language": "it",
+            "question": "Domanda?",
+            "answer_a": "A",
+            "answer_b": None,
+            "answer_c": "C",
+            "answer_d": "D",
+            "picture_question_url": 101,
+        }
+
+        updated = main.content_with_edits(
+            content,
+            "q_111111111111",
+            "it",
+            {
+                "question": "Domanda corretta?",
+                "answer_a": "A corretta",
+                "answer_b": None,
+                "answer_c": "C",
+                "answer_d": "D",
+            },
+        )
+
+        self.assertEqual(updated["question"], "Domanda corretta?")
+        self.assertIsNone(updated["answer_b"])
+        self.assertEqual(updated["picture_question_url"], 101)
+        self.assertEqual(content["question"], "Domanda?")
 
     def test_campaign_load_builds_toc_and_marks_approved_questions(self) -> None:
         manifest = {
@@ -186,38 +214,45 @@ class CampaignBackendTests(unittest.TestCase):
             "picture_c": None,
             "picture_d": None,
         }
-        editor_html = main.templates.get_template("editor.html").render(
-            request=request,
-            key="NF101",
-            reference=question,
-            review=question,
-            diff=main.word_diff(question, question),
-            sha="abc",
-            meta_sha="def",
-            review_status="to_be_reviewed",
-            review_status_author="reviewer",
-            review_statuses=main.REVIEW_STATUSES,
-            review_status_labels=main.REVIEW_STATUS_LABELS,
-            comments_sha="",
-            comments=[],
-            reference_language="de",
-            review_language="fr",
-            reference_language_label="German",
-            review_language_label="French",
-            next_question="NF102",
-            prev_question=None,
-            next_section=None,
-            prev_section=None,
-        )
+        editor_context = {
+            "request": request,
+            "key": "NF101",
+            "reference": question,
+            "review": question,
+            "diff": main.word_diff(question, question),
+            "sha": "abc",
+            "meta_sha": "def",
+            "review_status": "to_be_reviewed",
+            "review_status_author": "reviewer",
+            "comments_sha": "",
+            "comments": [],
+            "reference_language": "de",
+            "review_language": "fr",
+            "reference_language_label": "German",
+            "review_language_label": "French",
+            "next_question": "NF102",
+            "prev_question": None,
+            "next_section": None,
+            "prev_section": None,
+        }
+        editor_template = main.templates.get_template("editor.html")
+        editor_html = editor_template.render(**editor_context)
         self.assertIn("images_fr/202.svg", editor_html)
         self.assertIn(
             "/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
         )
-        self.assertIn(">Approve</button>", editor_html)
+        self.assertIn('value="commit">Commit</button>', editor_html)
+        self.assertNotIn("Add comment", editor_html)
+        self.assertIn("Working with GitHub...", main.templates.get_template("layout.html").render(request=request))
         self.assertIn("changed by reviewer", editor_html)
 
-    def test_status_route_sets_requested_value(self) -> None:
+        editor_context["review_status"] = "approved"
+        approved_html = editor_template.render(**editor_context)
+        self.assertIn('value="reopen">Reopen</button>', approved_html)
+        self.assertIn('name="question" class="form-control" rows="10" disabled', approved_html)
+
+    def test_commit_updates_text_comment_and_status(self) -> None:
         request = SimpleNamespace(
             session={"token": "test-token", "username": "reviewer"},
             query_params={"reference_language": "de", "review_language": "fr"},
@@ -226,7 +261,74 @@ class CampaignBackendTests(unittest.TestCase):
             "id": "q_111111111111",
             "review": {"de": "approved", "fr": "to_be_reviewed", "it": "to_be_reviewed"},
         }
+        content = {
+            "question_id": "q_111111111111",
+            "language": "fr",
+            "question": "Question?",
+            "answer_a": "A",
+            "answer_b": "B",
+            "answer_c": "C",
+            "answer_d": "D",
+            "picture_question_url": None,
+        }
 
+        with (
+            patch.object(
+                main,
+                "load_campaign",
+                return_value=(
+                    {},
+                    None,
+                    {"NF101": {"question_id": "q_111111111111"}},
+                    "de",
+                    "fr",
+                ),
+            ),
+            patch.object(
+                main,
+                "fetch_path",
+                side_effect=[
+                    {"sha": "meta-sha", "json": meta},
+                    {"sha": "content-sha", "json": content},
+                ],
+            ),
+            patch.object(main, "fetch_optional_path", return_value=None),
+            patch.object(main, "update_path") as update_path,
+        ):
+            response = main.save_question(
+                request=request,
+                key="NF101",
+                sha="content-sha",
+                meta_sha="meta-sha",
+                comments_sha="",
+                action="commit",
+                question="Question corrigée?",
+                answer_a="A",
+                answer_b="B",
+                answer_c="C",
+                answer_d="D",
+                comment="  Motif utile  ",
+            )
+
+        self.assertEqual(response.status_code, 303)
+        self.assertEqual(update_path.call_count, 3)
+        content_call, comment_call, meta_call = [call.args for call in update_path.call_args_list]
+        self.assertEqual(content_call[0], "pool/questions/q_111111111111/question.fr.json")
+        self.assertEqual(content_call[1]["question"], "Question corrigée?")
+        self.assertEqual(comment_call[0], "reviews/q_111111111111.json")
+        self.assertEqual(comment_call[1]["comments"]["fr"], ["Motif utile"])
+        self.assertEqual(meta_call[0], "pool/questions/q_111111111111/question.meta.json")
+        self.assertEqual(meta_call[1]["review"]["fr"], "approved")
+
+    def test_reopen_changes_only_status(self) -> None:
+        request = SimpleNamespace(
+            session={"token": "test-token"},
+            query_params={"reference_language": "de", "review_language": "fr"},
+        )
+        meta = {
+            "id": "q_111111111111",
+            "review": {"de": "approved", "fr": "approved", "it": "to_be_reviewed"},
+        }
         with (
             patch.object(
                 main,
@@ -246,25 +348,34 @@ class CampaignBackendTests(unittest.TestCase):
             ),
             patch.object(main, "update_path") as update_path,
         ):
-            response = main.update_review_status(
+            response = main.save_question(
                 request=request,
                 key="NF101",
+                sha="content-sha",
                 meta_sha="meta-sha",
-                status="rejected",
+                comments_sha="",
+                action="reopen",
             )
 
         self.assertEqual(response.status_code, 303)
         update_path.assert_called_once()
         args = update_path.call_args.args
         self.assertEqual(args[0], "pool/questions/q_111111111111/question.meta.json")
-        self.assertEqual(args[1]["review"]["fr"], "rejected")
-        self.assertEqual(args[2], "meta-sha")
+        self.assertEqual(args[1]["review"]["fr"], "to_be_reviewed")
 
-    def test_status_route_rejects_stale_sha_without_writing(self) -> None:
+    def test_commit_rejects_stale_content_sha_without_writing(self) -> None:
         request = SimpleNamespace(
             session={"token": "test-token"},
             query_params={"reference_language": "de", "review_language": "fr"},
         )
+        meta = {
+            "id": "q_111111111111",
+            "review": {"de": "approved", "fr": "to_be_reviewed"},
+        }
+        content = {
+            "question_id": "q_111111111111",
+            "language": "fr",
+        }
         with (
             patch.object(
                 main,
@@ -280,15 +391,20 @@ class CampaignBackendTests(unittest.TestCase):
             patch.object(
                 main,
                 "fetch_path",
-                return_value={"sha": "new-meta-sha", "json": {}},
+                side_effect=[
+                    {"sha": "meta-sha", "json": meta},
+                    {"sha": "new-content-sha", "json": content},
+                ],
             ),
             patch.object(main, "update_path") as update_path,
         ):
-            response = main.update_review_status(
+            response = main.save_question(
                 request=request,
                 key="NF101",
-                meta_sha="old-meta-sha",
-                status="approved",
+                sha="old-content-sha",
+                meta_sha="meta-sha",
+                comments_sha="",
+                action="commit",
             )
 
         self.assertEqual(response.status_code, 409)
@@ -354,11 +470,7 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(comments[0]["author"], "first-reviewer")
         self.assertEqual(comments[1]["author"], "second-reviewer")
 
-    def test_comment_route_appends_selected_language_with_sha(self) -> None:
-        request = SimpleNamespace(
-            session={"token": "test-token"},
-            query_params={"reference_language": "de", "review_language": "it"},
-        )
+    def test_comment_append_preserves_other_languages(self) -> None:
         current = {
             "sha": "comments-sha",
             "json": {
@@ -367,30 +479,12 @@ class CampaignBackendTests(unittest.TestCase):
                 "comments": {"fr": ["Existant"]},
             },
         }
-        with (
-            patch.object(
-                main,
-                "load_campaign",
-                return_value=(
-                    {},
-                    None,
-                    {"NF101": {"question_id": "q_111111111111"}},
-                    "de",
-                    "it",
-                ),
-            ),
-            patch.object(main, "fetch_optional_path", return_value=current),
-            patch.object(main, "update_path") as update_path,
-        ):
-            response = main.add_review_comment(
-                request=request,
-                key="NF101",
-                comments_sha="comments-sha",
-                comment="  Commento utile  ",
-            )
-
-        self.assertEqual(response.status_code, 303)
-        payload = update_path.call_args.args[1]
+        payload = main.comment_with_append(
+            current,
+            "q_111111111111",
+            "it",
+            "Commento utile",
+        )
         self.assertEqual(payload["comments"]["fr"], ["Existant"])
         self.assertEqual(payload["comments"]["it"], ["Commento utile"])
 

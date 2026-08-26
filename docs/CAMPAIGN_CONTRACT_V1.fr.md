@@ -140,11 +140,18 @@ L'export copie toute la métadonnée de la question, puis met uniquement le
 statut des `editable_languages` à `to_be_reviewed` dans la copie de campagne.
 Les autres langues et métadonnées restent inchangées.
 
-L'interface de campagne utilise seulement trois décisions :
+L'interface de campagne utilise seulement deux états actifs :
 
 - `to_be_reviewed` : travail ouvert ou correction encore demandée ;
 - `approved` : représentation prête à être proposée à l'import ;
-- `rejected` : résultat à ne pas importer.
+
+Une question ouverte est terminée par une seule action `Commit`, qui enregistre
+le texte, le commentaire éventuel et l'approbation. Une question approuvée peut
+être remise au travail avec `Reopen`. Il n'existe ni bouton de statut séparé,
+ni bouton d'ajout de commentaire, ni action `Reject`. Pour écarter une
+proposition, le réviseur conserve ou restaure le texte d'origine puis le
+commite. La valeur historique `rejected` reste tolérée par l'importeur, mais la
+nouvelle interface ne la produit pas.
 
 Les autres valeurs canoniques restent valides dans les langues non modifiables,
 mais l'interface ne les invente pas comme étapes supplémentaires. Ces statuts

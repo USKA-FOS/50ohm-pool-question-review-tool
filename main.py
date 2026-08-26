@@ -32,12 +32,7 @@ LANGUAGE_LABELS = {
     'fr': 'French',
     'it': 'Italian',
 }
-REVIEW_STATUSES = ('to_be_reviewed', 'approved', 'rejected')
-REVIEW_STATUS_LABELS = {
-    'to_be_reviewed': 'To be reviewed',
-    'approved': 'Approve',
-    'rejected': 'Reject',
-}
+REVIEW_STATUSES = ('to_be_reviewed', 'approved')
 
 required_config = {
     'GITHUB_CLIENT_ID': CLIENT_ID,
@@ -265,6 +260,51 @@ def canonical_to_legacy_question(payload):
         'picture_c': payload['picture_answer_c_url'],
         'picture_d': payload['picture_answer_d_url'],
     }
+
+
+def content_with_edits(content, question_id, language, values):
+    if content.get('question_id') != question_id:
+        raise ValueError('Question content id does not match its directory.')
+    if content.get('language') != language:
+        raise ValueError('Question content language does not match the active review language.')
+
+    result = dict(content)
+    for field in ('question', 'answer_a', 'answer_b', 'answer_c', 'answer_d'):
+        current_value = content.get(field)
+        submitted_value = values.get(field)
+        if current_value is None:
+            if submitted_value is not None:
+                raise ValueError(f'Nullable field {field} cannot be created by the editor.')
+            result[field] = None
+        elif submitted_value is None:
+            raise ValueError(f'Missing editable field: {field}.')
+        else:
+            result[field] = submitted_value
+
+    if not result['question'].strip():
+        raise ValueError('Question text cannot be empty.')
+    return result
+
+
+def comment_with_append(current, question_id, language, text):
+    if current is None:
+        payload = {
+            'schema_version': 1,
+            'question_id': question_id,
+            'comments': {},
+        }
+    else:
+        payload = current['json']
+        if payload.get('schema_version') != 1 or payload.get('question_id') != question_id:
+            raise ValueError('Invalid campaign comment file.')
+        payload = dict(payload)
+        payload['comments'] = dict(payload.get('comments', {}))
+
+    language_comments = payload['comments'].get(language, [])
+    if not isinstance(language_comments, list) or any(not isinstance(item, str) for item in language_comments):
+        raise ValueError(f'Invalid campaign comments for {language}.')
+    payload['comments'][language] = [*language_comments, text]
+    return payload
 
 
 def meta_with_status(meta, question_id, language, status):
@@ -501,8 +541,6 @@ def edit_question(request: Request, key: str):
             'meta_sha': data_meta['sha'],
             'review_status': review_status,
             'review_status_author': review_status_author,
-            'review_statuses': REVIEW_STATUSES,
-            'review_status_labels': REVIEW_STATUS_LABELS,
             'comments_sha': comments_sha or '',
             'comments': comments,
             'reference_language': reference_language,
@@ -522,30 +560,19 @@ def save_question(
     request: Request,
     key: str,
     sha: str = Form(...),
-    question: str = Form(...),
+    meta_sha: str = Form(...),
+    comments_sha: str = Form(''),
+    action: str = Form(...),
+    question: Optional[str] = Form(None),
     answer_a: Optional[str] = Form(None),
     answer_b: Optional[str] = Form(None),
     answer_c: Optional[str] = Form(None),
     answer_d: Optional[str] = Form(None),
-    comment: Optional[str] = Form(None)
-):
-    return HTMLResponse(
-        '<h1>Text editing not enabled</h1><p>No question text was written.</p>',
-        status_code=405,
-    )
-
-
-@app.post('/status/{key}')
-def update_review_status(
-    request: Request,
-    key: str,
-    meta_sha: str = Form(...),
-    status: str = Form(...),
+    comment: Optional[str] = Form(None),
 ):
     token = get_token(request)
     if not token:
         return RedirectResponse('/login')
-
     reference_language = request.query_params.get('reference_language')
     review_language = request.query_params.get('review_language')
     try:
@@ -557,86 +584,88 @@ def update_review_status(
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
+
         meta_path = f'pool/questions/{question_id}/question.meta.json'
         current_meta = fetch_path(CAMPAIGN_BRANCH, meta_path, token)
         if current_meta['sha'] != meta_sha:
             return HTMLResponse(
-                '<h1>Concurrent change detected</h1><p>Reload the question before changing its status.</p>',
+                '<h1>Concurrent change detected</h1><p>Reload the question before continuing.</p>',
                 status_code=409,
             )
-        updated_meta = meta_with_status(current_meta['json'], question_id, review_language, status)
+
+        if action == 'reopen':
+            updated_meta = meta_with_status(current_meta['json'], question_id, review_language, 'to_be_reviewed')
+            if updated_meta != current_meta['json']:
+                update_path(
+                    meta_path,
+                    updated_meta,
+                    current_meta['sha'],
+                    f'Reopen {key} {review_language} review',
+                    token,
+                )
+            return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)
+
+        if action != 'commit':
+            raise ValueError(f'Unsupported review action: {action}.')
+
+        content_path = f'pool/questions/{question_id}/question.{review_language}.json'
+        current_content = fetch_path(CAMPAIGN_BRANCH, content_path, token)
+        if current_content['sha'] != sha:
+            return HTMLResponse(
+                '<h1>Concurrent change detected</h1><p>Reload the question before committing.</p>',
+                status_code=409,
+            )
+        updated_content = content_with_edits(
+            current_content['json'],
+            question_id,
+            review_language,
+            {
+                'question': question,
+                'answer_a': answer_a,
+                'answer_b': answer_b,
+                'answer_c': answer_c,
+                'answer_d': answer_d,
+            },
+        )
+
+        comment_text = comment.strip() if comment else ''
+        current_comments = None
+        if comment_text:
+            comments_path = f'reviews/{question_id}.json'
+            current_comments = fetch_optional_path(CAMPAIGN_BRANCH, comments_path, token)
+            current_comments_sha = current_comments['sha'] if current_comments is not None else ''
+            if current_comments_sha != comments_sha:
+                return HTMLResponse(
+                    '<h1>Concurrent change detected</h1><p>Reload the question before committing.</p>',
+                    status_code=409,
+                )
+
+        if updated_content != current_content['json']:
+            update_path(
+                content_path,
+                updated_content,
+                current_content['sha'],
+                f'Update {key} {review_language} text',
+                token,
+            )
+        if comment_text:
+            update_path(
+                comments_path,
+                comment_with_append(current_comments, question_id, review_language, comment_text),
+                current_comments['sha'] if current_comments is not None else None,
+                f'Comment on {key} {review_language} review',
+                token,
+            )
+
+        updated_meta = meta_with_status(current_meta['json'], question_id, review_language, 'approved')
         if updated_meta != current_meta['json']:
             update_path(
                 meta_path,
                 updated_meta,
                 current_meta['sha'],
-                f'Set {key} {review_language} review status to {status}',
+                f'Approve {key} {review_language} review',
                 token,
             )
-    except ValueError as exc:
-        return HTMLResponse(f'<h1>Invalid campaign data</h1><pre>{exc}</pre>', status_code=400)
-    except requests.exceptions.HTTPError as exc:
-        status_code = 409 if exc.response is not None and exc.response.status_code in (409, 422) else 502
-        return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=status_code)
-
-    return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)
-
-
-@app.post('/comment/{key}')
-def add_review_comment(
-    request: Request,
-    key: str,
-    comments_sha: str = Form(''),
-    comment: str = Form(...),
-):
-    token = get_token(request)
-    if not token:
-        return RedirectResponse('/login')
-    reference_language = request.query_params.get('reference_language')
-    review_language = request.query_params.get('review_language')
-    try:
-        _, _, questions_by_number, reference_language, review_language = load_campaign(
-            token,
-            reference_language,
-            review_language,
-        )
-        if key not in questions_by_number:
-            return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
-        text = comment.strip()
-        if not text:
-            return HTMLResponse('<h1>Empty comment</h1>', status_code=400)
-        question_id = questions_by_number[key]['question_id']
-        path = f'reviews/{question_id}.json'
-        current = fetch_optional_path(CAMPAIGN_BRANCH, path, token)
-        current_sha = current['sha'] if current is not None else ''
-        if current_sha != comments_sha:
-            return HTMLResponse(
-                '<h1>Concurrent change detected</h1><p>Reload the question before adding the comment.</p>',
-                status_code=409,
-            )
-        if current is None:
-            payload = {
-                'schema_version': 1,
-                'question_id': question_id,
-                'comments': {},
-            }
-        else:
-            payload = current['json']
-            if payload.get('schema_version') != 1 or payload.get('question_id') != question_id:
-                raise ValueError('Invalid campaign comment file.')
-            payload = dict(payload)
-            payload['comments'] = dict(payload.get('comments', {}))
-        language_comments = payload['comments'].get(review_language, [])
-        if not isinstance(language_comments, list) or any(not isinstance(item, str) for item in language_comments):
-            raise ValueError(f'Invalid campaign comments for {review_language}.')
-        payload['comments'][review_language] = [*language_comments, text]
-        update_path(
-            path,
-            payload,
-            current['sha'] if current is not None else None,
-            f'Comment on {key} {review_language} review',
-            token,
-        )
     except ValueError as exc:
         return HTMLResponse(f'<h1>Invalid campaign data</h1><pre>{exc}</pre>', status_code=400)
     except requests.exceptions.HTTPError as exc:

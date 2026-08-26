@@ -59,5 +59,37 @@
     {% block content %}{% endblock %}
 </div>
 
+<div id="busy-overlay" class="busy-overlay" aria-live="polite" aria-hidden="true">
+    <div class="busy-message">
+        <div class="spinner-border" role="status" aria-hidden="true"></div>
+        <span>Working with GitHub...</span>
+    </div>
+</div>
+
+<script>
+document.addEventListener("DOMContentLoaded", function() {
+    const overlay = document.getElementById("busy-overlay");
+    const showBusy = function() {
+        overlay.classList.add("is-visible");
+        overlay.setAttribute("aria-hidden", "false");
+    };
+
+    document.querySelectorAll("form").forEach(function(form) {
+        form.addEventListener("submit", showBusy);
+    });
+    document.querySelectorAll('a[href^="/"]').forEach(function(link) {
+        link.addEventListener("click", function(event) {
+            if (!event.defaultPrevented && !link.classList.contains("disabled")) {
+                showBusy();
+            }
+        });
+    });
+    window.addEventListener("pageshow", function() {
+        overlay.classList.remove("is-visible");
+        overlay.setAttribute("aria-hidden", "true");
+    });
+});
+</script>
+
 </body>
 </html>

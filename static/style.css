@@ -39,6 +39,31 @@ button, a.btn {
   text-decoration-thickness: 1.5px;
 }
 
+.busy-overlay {
+    align-items: center;
+    background: rgb(255 255 255 / 82%);
+    display: none;
+    inset: 0;
+    justify-content: center;
+    position: fixed;
+    z-index: 2000;
+}
+
+.busy-overlay.is-visible {
+    display: flex;
+}
+
+.busy-message {
+    align-items: center;
+    background: #fff;
+    border: 1px solid #adb5bd;
+    border-radius: 6px;
+    box-shadow: 0 4px 16px rgb(0 0 0 / 15%);
+    display: flex;
+    gap: 12px;
+    padding: 16px 20px;
+}
+
 
 /* Responsive layout fixes */
 @media (max-width: 768px) {

@@ -10,7 +10,8 @@
 The application is being adapted incrementally. It currently reads an exported
 canonical campaign from GitHub, displays its derived table of contents, and
 supports dynamic reference/review language selection. Campaign writes remain
-limited to approval-only metadata updates with SHA conflict checks. Question
-text and comment writes remain disabled. Documentation in this directory
-describes the current behavior and the remaining work before reviewed data can
-safely return to the canonical `50ohm-question-pool` repository.
+protected by SHA conflict checks. One `Commit` action writes changed text,
+appends an optional comment, and approves the active language; `Reopen` restores
+the open status. Documentation in this directory describes the current
+behavior and the remaining work before reviewed data can safely return to the
+canonical `50ohm-question-pool` repository.
