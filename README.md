@@ -9,7 +9,8 @@ application is a containerized FastAPI web service.
 
 ## How it works
 Users authenticate with GitHub. Their OAuth token reads and atomically commits
-changes to the configured branch of `50ohm-question-review-campaigns`. Questions
+changes to configured branches of `50ohm-question-review-campaigns`. Each
+campaign is addressed under `/campaign/<campaign-id>/`. Questions
 keep the canonical object-centric JSON shape. Working comments are separate
 campaign files, and the generated table of contents is read-only. The canonical
 question pool is never written by the web application.
@@ -39,7 +40,8 @@ docker run --rm --detach \
   --env-file ~/.config/50ohm-review-tool/local.env \
   --env GITHUB_OWNER=isqsoft \
   --env GITHUB_REPO=50ohm-question-review-campaigns \
-  --env CAMPAIGN_BRANCH=campaign/multilingual-empfaenger-sinus-signals-example \
+  --env 'CAMPAIGNS_JSON={"receiver-signals":{"branch":"campaign/multilingual-empfaenger-sinus-signals-example","label":"Receiver and sinusoidal signals"}}' \
+  --env DEFAULT_CAMPAIGN=receiver-signals \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
   --env GITHUB_PROFILE=true \
@@ -47,8 +49,30 @@ docker run --rm --detach \
   50ohm-question-review-tool:multilingual-review
 ```
 
-The server is then available at `http://localhost:8080`. Its health endpoint
-is `http://localhost:8080/healthz`.
+The server redirects `http://localhost:8080` to the default campaign at
+`http://localhost:8080/campaign/receiver-signals/`. Its health endpoint is
+`http://localhost:8080/healthz`.
+
+`CAMPAIGNS_JSON` maps stable URL identifiers to Git branches and optional
+display labels. For example:
+
+```dotenv
+CAMPAIGNS_JSON={"receiver-signals":{"branch":"campaign/receiver-signals","label":"Receiver signals"},"antennas":{"branch":"campaign/antennas","label":"Antenna terminology"}}
+DEFAULT_CAMPAIGN=receiver-signals
+```
+
+Reviewers receive the relevant campaign URL. All campaigns share the same
+GitHub OAuth callback and application process. `CAMPAIGN_BRANCH` remains a
+supported single-campaign compatibility setting when `CAMPAIGNS_JSON` is not
+defined.
+
+Changing only the campaign map does not require rebuilding the Docker image.
+Update the private environment file and recreate the container so Docker
+injects the new values:
+
+```bash
+docker compose up -d --no-deps --force-recreate question-review
+```
 
 With profiling enabled, follow only the timing lines with:
 

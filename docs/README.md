@@ -17,3 +17,8 @@ protected by SHA and branch-head conflict checks. One `Commit` action writes
 changed text, appends an optional comment, and approves the active language;
 `Reopen` restores the open status. Canonical return is handled by the dry-run
 and controlled apply tools in `50ohm-question-pool`.
+
+One deployment can expose several configured campaign branches under
+`/campaign/<campaign-id>/`. `CAMPAIGNS_JSON` defines the public identifiers,
+branches, and labels; `DEFAULT_CAMPAIGN` controls the root redirect. All routes
+share one GitHub OAuth callback.

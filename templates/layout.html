@@ -45,12 +45,12 @@
 
 <nav class="navbar navbar-expand-lg navbar-dark bg-dark">
     <div class="container-fluid">
-        <a class="navbar-brand" href="/">Question Pool Review Tool</a>
+        <a class="navbar-brand" href="{% if campaign_id %}/campaign/{{ campaign_id }}/{% else %}/{% endif %}">Question Pool Review Tool</a>
 
         {% if request.session.get("token") %}
-            <a class="btn btn-outline-light" href="/logout">Logout</a>
+            <a class="btn btn-outline-light" href="/logout?campaign_id={{ campaign_id or '' }}">Logout</a>
         {% else %}
-            <a class="btn btn-outline-light" href="/login">Login with GitHub</a>
+            <a class="btn btn-outline-light" href="/login?campaign_id={{ campaign_id or '' }}">Login with GitHub</a>
         {% endif %}
     </div>
 </nav>

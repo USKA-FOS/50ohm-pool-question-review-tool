@@ -34,6 +34,8 @@ CLIENT_SECRET = os.getenv('GITHUB_CLIENT_SECRET')
 OWNER = os.getenv('GITHUB_OWNER')
 REPO = os.getenv('GITHUB_REPO')
 CAMPAIGN_BRANCH = os.getenv('CAMPAIGN_BRANCH')
+CAMPAIGNS_JSON = os.getenv('CAMPAIGNS_JSON')
+DEFAULT_CAMPAIGN = os.getenv('DEFAULT_CAMPAIGN', 'default')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
 SESSION_SECRET = os.getenv('SESSION_SECRET')
 GITHUB_PROFILE = os.getenv('GITHUB_PROFILE', 'false').lower() == 'true'
@@ -52,7 +54,7 @@ LAST_QUESTION_COOKIE = '50ohm_last_question'
 PROFILE_REQUEST_ID = ContextVar('profile_request_id', default='-')
 PROFILE_EVENTS = ContextVar('profile_events', default=None)
 LOGGER = logging.getLogger('uvicorn.error')
-CAMPAIGN_SNAPSHOT = None
+CAMPAIGN_SNAPSHOTS = {}
 CAMPAIGN_SNAPSHOT_LOCK = threading.Lock()
 STATUS_AUTHOR_CACHE = {}
 COMMENT_AUTHOR_CACHE = {}
@@ -62,13 +64,59 @@ required_config = {
     'GITHUB_CLIENT_SECRET': CLIENT_SECRET,
     'GITHUB_OWNER': OWNER,
     'GITHUB_REPO': REPO,
-    'CAMPAIGN_BRANCH': CAMPAIGN_BRANCH,
     'GITHUB_CALLBACK_URL': CALLBACK_URL,
     'SESSION_SECRET': SESSION_SECRET,
 }
 missing_config = [key for key, value in required_config.items() if not value]
 if missing_config:
     raise RuntimeError(f"Missing required configuration: {', '.join(missing_config)}")
+
+
+def load_campaign_configs(raw_json, legacy_branch, default_campaign):
+    if raw_json:
+        try:
+            raw_configs = json.loads(raw_json)
+        except json.JSONDecodeError as exc:
+            raise RuntimeError('CAMPAIGNS_JSON must be valid JSON.') from exc
+        if not isinstance(raw_configs, dict) or not raw_configs:
+            raise RuntimeError('CAMPAIGNS_JSON must be a non-empty JSON object.')
+    elif legacy_branch:
+        raw_configs = {default_campaign: {'branch': legacy_branch, 'label': default_campaign}}
+    else:
+        raise RuntimeError('Set CAMPAIGNS_JSON or CAMPAIGN_BRANCH.')
+
+    configs = {}
+    for campaign_id, raw_config in raw_configs.items():
+        if not isinstance(campaign_id, str) or not re.fullmatch(r'[a-z0-9][a-z0-9-]{0,62}', campaign_id):
+            raise RuntimeError(f'Invalid campaign id: {campaign_id!r}.')
+        if isinstance(raw_config, str):
+            raw_config = {'branch': raw_config}
+        if not isinstance(raw_config, dict):
+            raise RuntimeError(f'Campaign {campaign_id} configuration must be an object or branch string.')
+        branch = raw_config.get('branch')
+        if not isinstance(branch, str) or not branch.strip():
+            raise RuntimeError(f'Campaign {campaign_id} has no valid branch.')
+        label = raw_config.get('label', campaign_id)
+        if not isinstance(label, str) or not label.strip():
+            raise RuntimeError(f'Campaign {campaign_id} has no valid label.')
+        configs[campaign_id] = {'branch': branch, 'label': label}
+    if default_campaign not in configs:
+        raise RuntimeError(f'DEFAULT_CAMPAIGN {default_campaign!r} is not configured.')
+    return configs
+
+
+CAMPAIGNS = load_campaign_configs(CAMPAIGNS_JSON, CAMPAIGN_BRANCH, DEFAULT_CAMPAIGN)
+
+
+def campaign_config(campaign_id):
+    try:
+        return CAMPAIGNS[campaign_id]
+    except KeyError as exc:
+        raise ValueError(f'Unknown campaign: {campaign_id}.') from exc
+
+
+def campaign_branch(campaign_id):
+    return campaign_config(campaign_id)['branch']
 
 app = FastAPI()
 app.add_middleware(
@@ -269,13 +317,14 @@ def fetch_repository_path(repository, ref, path, token):
     }
 
 
-def oldest_campaign_commit_for_path(path, token):
+def oldest_campaign_commit_for_path(campaign_id, path, token):
+    branch = campaign_branch(campaign_id)
     response = github_request(
         'GET',
         f'https://api.github.com/repos/{OWNER}/{REPO}/commits',
         operation='commits.oldest',
         resource=path,
-        params={'sha': CAMPAIGN_BRANCH, 'path': path, 'per_page': 1},
+        params={'sha': branch, 'path': path, 'per_page': 1},
         headers=github_headers(token),
         timeout=15,
     )
@@ -304,20 +353,21 @@ def git_blob_sha(raw):
     return hashlib.sha1(header + raw).hexdigest()
 
 
-def campaign_branch_head(token):
-    ref = quote(f'heads/{CAMPAIGN_BRANCH}', safe='/')
+def campaign_branch_head(campaign_id, token):
+    branch = campaign_branch(campaign_id)
+    ref = quote(f'heads/{branch}', safe='/')
     response = github_request(
         'GET',
         f'https://api.github.com/repos/{OWNER}/{REPO}/git/ref/{ref}',
         operation='branch.read',
-        resource=CAMPAIGN_BRANCH,
+        resource=branch,
         headers=github_headers(token),
         timeout=15,
     )
     response.raise_for_status()
     sha = response.json().get('object', {}).get('sha')
     if not sha:
-        raise ValueError(f'Cannot resolve campaign branch head: {CAMPAIGN_BRANCH}.')
+        raise ValueError(f'Cannot resolve campaign branch head: {branch}.')
     return sha
 
 
@@ -356,55 +406,57 @@ def download_campaign_snapshot(ref, token):
     return files
 
 
-def invalidate_campaign_snapshot():
-    global CAMPAIGN_SNAPSHOT
+def invalidate_campaign_snapshot(campaign_id):
     with CAMPAIGN_SNAPSHOT_LOCK:
-        CAMPAIGN_SNAPSHOT = None
+        CAMPAIGN_SNAPSHOTS.pop(campaign_id, None)
 
 
-def ensure_campaign_snapshot(token):
-    global CAMPAIGN_SNAPSHOT
+def ensure_campaign_snapshot(campaign_id, token):
     now = time.monotonic()
+    snapshot = CAMPAIGN_SNAPSHOTS.get(campaign_id)
     if (
-        CAMPAIGN_SNAPSHOT is not None
-        and now - CAMPAIGN_SNAPSHOT['checked_at'] < CAMPAIGN_REFRESH_SECONDS
+        snapshot is not None
+        and now - snapshot['checked_at'] < CAMPAIGN_REFRESH_SECONDS
     ):
-        return CAMPAIGN_SNAPSHOT
+        return snapshot
     with CAMPAIGN_SNAPSHOT_LOCK:
         now = time.monotonic()
+        snapshot = CAMPAIGN_SNAPSHOTS.get(campaign_id)
         if (
-            CAMPAIGN_SNAPSHOT is not None
-            and now - CAMPAIGN_SNAPSHOT['checked_at'] < CAMPAIGN_REFRESH_SECONDS
+            snapshot is not None
+            and now - snapshot['checked_at'] < CAMPAIGN_REFRESH_SECONDS
         ):
-            return CAMPAIGN_SNAPSHOT
-        head_sha = campaign_branch_head(token)
-        if CAMPAIGN_SNAPSHOT is not None and CAMPAIGN_SNAPSHOT['head_sha'] == head_sha:
-            CAMPAIGN_SNAPSHOT['checked_at'] = now
-            return CAMPAIGN_SNAPSHOT
-        if CAMPAIGN_SNAPSHOT is not None:
-            CAMPAIGN_SNAPSHOT = {
-                **CAMPAIGN_SNAPSHOT,
+            return snapshot
+        head_sha = campaign_branch_head(campaign_id, token)
+        if snapshot is not None and snapshot['head_sha'] == head_sha:
+            snapshot['checked_at'] = now
+            return snapshot
+        if snapshot is not None:
+            snapshot = {
+                **snapshot,
                 'head_sha': head_sha,
                 'current_files': download_campaign_snapshot(head_sha, token),
                 'checked_at': now,
             }
-            return CAMPAIGN_SNAPSHOT
-        export_sha = oldest_campaign_commit_for_path('campaign.meta.json', token)
+            CAMPAIGN_SNAPSHOTS[campaign_id] = snapshot
+            return snapshot
+        export_sha = oldest_campaign_commit_for_path(campaign_id, 'campaign.meta.json', token)
         current_files = download_campaign_snapshot(head_sha, token)
         original_files = download_campaign_snapshot(export_sha, token)
-        CAMPAIGN_SNAPSHOT = {
+        snapshot = {
             'head_sha': head_sha,
             'export_sha': export_sha,
             'current_files': current_files,
             'original_files': original_files,
             'checked_at': now,
         }
-        return CAMPAIGN_SNAPSHOT
+        CAMPAIGN_SNAPSHOTS[campaign_id] = snapshot
+        return snapshot
 
 
-def fetch_path(ref, path, token):
-    if ref == CAMPAIGN_BRANCH:
-        snapshot = ensure_campaign_snapshot(token)
+def fetch_path(campaign_id, ref, path, token):
+    if ref == campaign_branch(campaign_id):
+        snapshot = ensure_campaign_snapshot(campaign_id, token)
         try:
             return snapshot['current_files'][path]
         except KeyError as exc:
@@ -412,11 +464,11 @@ def fetch_path(ref, path, token):
     return fetch_repository_path(f'{OWNER}/{REPO}', ref, path, token)
 
 
-def fetch_original_question(manifest, question_id, language, token):
+def fetch_original_question(campaign_id, manifest, question_id, language, token):
     if question_id not in manifest.get('question_ids', []):
         raise ValueError(f'Question {question_id} is outside the campaign scope.')
     path = f'pool/questions/{question_id}/question.{language}.json'
-    snapshot = ensure_campaign_snapshot(token)
+    snapshot = ensure_campaign_snapshot(campaign_id, token)
     try:
         return snapshot['original_files'][path]
     except KeyError as exc:
@@ -435,7 +487,7 @@ def serialized_json(payload):
     return (json.dumps(payload, ensure_ascii=True, indent=2) + '\n').encode('utf-8')
 
 
-def commit_campaign_files(changes, message, expected_head, token):
+def commit_campaign_files(campaign_id, changes, message, expected_head, token):
     if not changes:
         return expected_head
     additions = [
@@ -464,7 +516,7 @@ mutation CommitCampaignFiles($input: CreateCommitOnBranchInput!) {
                 'input': {
                     'branch': {
                         'repositoryNameWithOwner': f'{OWNER}/{REPO}',
-                        'branchName': CAMPAIGN_BRANCH,
+                        'branchName': campaign_branch(campaign_id),
                     },
                     'message': {'headline': message},
                     'expectedHeadOid': expected_head,
@@ -480,50 +532,50 @@ mutation CommitCampaignFiles($input: CreateCommitOnBranchInput!) {
     if errors:
         error_message = '; '.join(str(error.get('message', 'unknown GraphQL error')) for error in errors)
         if 'expectedHeadOid' in error_message or 'head' in error_message.lower():
-            invalidate_campaign_snapshot()
+            invalidate_campaign_snapshot(campaign_id)
             raise CampaignConflictError(error_message)
         raise CampaignWriteError(error_message)
     commit_sha = payload.get('data', {}).get('createCommitOnBranch', {}).get('commit', {}).get('oid')
     if not commit_sha:
         raise CampaignWriteError('GitHub did not return the created commit oid.')
 
-    global CAMPAIGN_SNAPSHOT
     with CAMPAIGN_SNAPSHOT_LOCK:
-        if CAMPAIGN_SNAPSHOT is None or CAMPAIGN_SNAPSHOT['head_sha'] != expected_head:
+        snapshot = CAMPAIGN_SNAPSHOTS.get(campaign_id)
+        if snapshot is None or snapshot['head_sha'] != expected_head:
             invalidate_after_lock = True
         else:
             invalidate_after_lock = False
             for path, content in changes.items():
                 raw = serialized_json(content)
-                CAMPAIGN_SNAPSHOT['current_files'][path] = {
+                snapshot['current_files'][path] = {
                     'sha': git_blob_sha(raw),
                     'json': content,
                 }
-            CAMPAIGN_SNAPSHOT['head_sha'] = commit_sha
-            CAMPAIGN_SNAPSHOT['checked_at'] = time.monotonic()
+            snapshot['head_sha'] = commit_sha
+            snapshot['checked_at'] = time.monotonic()
     if invalidate_after_lock:
-        invalidate_campaign_snapshot()
+        invalidate_campaign_snapshot(campaign_id)
     return commit_sha
 
 
-def fetch_optional_path(ref, path, token):
-    if ref == CAMPAIGN_BRANCH:
-        return ensure_campaign_snapshot(token)['current_files'].get(path)
+def fetch_optional_path(campaign_id, ref, path, token):
+    if ref == campaign_branch(campaign_id):
+        return ensure_campaign_snapshot(campaign_id, token)['current_files'].get(path)
     try:
-        return fetch_path(ref, path, token)
+        return fetch_path(campaign_id, ref, path, token)
     except requests.exceptions.HTTPError as exc:
         if exc.response is not None and exc.response.status_code == 404:
             return None
         raise
 
 
-def github_commits_for_path(path, token):
+def github_commits_for_path(campaign_id, path, token):
     response = github_request(
         'GET',
         f'https://api.github.com/repos/{OWNER}/{REPO}/commits',
         operation='commits.list',
         resource=path,
-        params={'sha': CAMPAIGN_BRANCH, 'path': path, 'per_page': 100},
+        params={'sha': campaign_branch(campaign_id), 'path': path, 'per_page': 100},
         headers=github_headers(token),
         timeout=15,
     )
@@ -539,20 +591,21 @@ def commit_author(commit):
     return commit_author_data.get('name') or 'unknown'
 
 
-def status_author(path, language, token):
-    current_file = fetch_path(CAMPAIGN_BRANCH, path, token)
-    cache_key = (path, language, current_file['sha'])
+def status_author(campaign_id, path, language, token):
+    branch = campaign_branch(campaign_id)
+    current_file = fetch_path(campaign_id, branch, path, token)
+    cache_key = (campaign_id, path, language, current_file['sha'])
     if cache_key in STATUS_AUTHOR_CACHE:
         return STATUS_AUTHOR_CACHE[cache_key]
-    for commit in github_commits_for_path(path, token):
-        current = fetch_optional_path(commit['sha'], path, token)
+    for commit in github_commits_for_path(campaign_id, path, token):
+        current = fetch_optional_path(campaign_id, commit['sha'], path, token)
         if current is None:
             continue
         current_status = current['json'].get('review', {}).get(language)
         parents = commit.get('parents', [])
         previous_status = None
         if parents:
-            previous = fetch_optional_path(parents[0]['sha'], path, token)
+            previous = fetch_optional_path(campaign_id, parents[0]['sha'], path, token)
             if previous is not None:
                 previous_status = previous['json'].get('review', {}).get(language)
         if current_status != previous_status:
@@ -563,9 +616,9 @@ def status_author(path, language, token):
     return 'unknown'
 
 
-def load_comments(question_id, language, token):
+def load_comments(campaign_id, question_id, language, token):
     path = f'reviews/{question_id}.json'
-    current = fetch_optional_path(CAMPAIGN_BRANCH, path, token)
+    current = fetch_optional_path(campaign_id, campaign_branch(campaign_id), path, token)
     if current is None:
         return None, []
     payload = current['json']
@@ -578,7 +631,7 @@ def load_comments(question_id, language, token):
     if not isinstance(comments, list) or any(not isinstance(comment, str) for comment in comments):
         raise ValueError(f'Invalid campaign comments for {language}.')
 
-    cache_key = (path, language, current['sha'])
+    cache_key = (campaign_id, path, language, current['sha'])
     if cache_key in COMMENT_AUTHOR_CACHE:
         authors = COMMENT_AUTHOR_CACHE[cache_key]
         return current['sha'], [
@@ -588,8 +641,8 @@ def load_comments(question_id, language, token):
 
     authors = ['unknown'] * len(comments)
     previous_count = 0
-    for commit in reversed(github_commits_for_path(path, token)):
-        version = fetch_optional_path(commit['sha'], path, token)
+    for commit in reversed(github_commits_for_path(campaign_id, path, token)):
+        version = fetch_optional_path(campaign_id, commit['sha'], path, token)
         if version is None:
             continue
         version_comments = version['json'].get('comments', {}).get(language, [])
@@ -726,12 +779,16 @@ def meta_with_status(meta, question_id, language, status):
     return result
 
 
-def edit_url(key, reference_language, review_language):
+def campaign_url(campaign_id):
+    return f'/campaign/{quote(campaign_id, safe="")}/'
+
+
+def edit_url(campaign_id, key, reference_language, review_language):
     query = urlencode({
         'reference_language': reference_language,
         'review_language': review_language,
     })
-    return f'/edit/{key}?{query}'
+    return f'{campaign_url(campaign_id)}edit/{quote(key, safe="")}?{query}'
 
 
 def select_languages(manifest, requested_reference=None, requested_review=None):
@@ -752,10 +809,11 @@ def select_languages(manifest, requested_reference=None, requested_review=None):
     return reference_language, review_language
 
 
-def load_campaign(token, requested_reference=None, requested_review=None, manifest=None):
+def load_campaign(campaign_id, token, requested_reference=None, requested_review=None, manifest=None):
+    branch = campaign_branch(campaign_id)
     if manifest is None:
-        manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
-    if manifest.get('campaign_branch') != CAMPAIGN_BRANCH:
+        manifest = fetch_path(campaign_id, branch, 'campaign.meta.json', token)['json']
+    if manifest.get('campaign_branch') != branch:
         raise ValueError('Configured branch does not match campaign.meta.json.')
     reference_language, review_language = select_languages(
         manifest,
@@ -763,13 +821,15 @@ def load_campaign(token, requested_reference=None, requested_review=None, manife
         requested_review,
     )
     navigation = fetch_path(
-        CAMPAIGN_BRANCH,
+        campaign_id,
+        branch,
         f'derived/question_pool_ch-{reference_language}.json',
         token,
     )['json']
     campaign_toc = toc(navigation)
     navigation_index = fetch_path(
-        CAMPAIGN_BRANCH,
+        campaign_id,
+        branch,
         'derived/navigation.index.json',
         token,
     )['json']
@@ -778,7 +838,7 @@ def load_campaign(token, requested_reference=None, requested_review=None, manife
         question_id = item['question_id']
         number = item['internal_code']
         meta_path = f'pool/questions/{question_id}/question.meta.json'
-        current_meta = fetch_path(CAMPAIGN_BRANCH, meta_path, token)['json']
+        current_meta = fetch_path(campaign_id, branch, meta_path, token)['json']
         if current_meta.get('id') != question_id:
             raise ValueError(f'Question metadata id does not match {question_id}.')
         current_review = current_meta.get('review', {})
@@ -819,14 +879,29 @@ def remember_review_preferences(response, reference_language, review_language, l
         response.set_cookie(LAST_QUESTION_COOKIE, last_question, **cookie_options)
 
 
-@app.get('/', response_class=HTMLResponse)
-def index(request: Request):
+@app.get('/')
+def root():
+    return RedirectResponse(campaign_url(DEFAULT_CAMPAIGN))
+
+
+@app.get('/campaign/{campaign_id}/', response_class=HTMLResponse)
+def index(request: Request, campaign_id: str):
+    try:
+        config = campaign_config(campaign_id)
+    except ValueError as exc:
+        return HTMLResponse(f'<h1>Campaign not found</h1><pre>{exc}</pre>', status_code=404)
     logged_in = bool(get_token(request))
     if logged_in:
         try:
-            manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', get_token(request))['json']
+            manifest = fetch_path(
+                campaign_id,
+                config['branch'],
+                'campaign.meta.json',
+                get_token(request),
+            )['json']
             requested_reference, requested_review = requested_languages(request, manifest)
             manifest, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
+                campaign_id,
                 get_token(request),
                 requested_reference,
                 requested_review,
@@ -866,6 +941,8 @@ def index(request: Request):
             'review_language': review_language,
             'remembered_question': remembered_question,
             'language_labels': LANGUAGE_LABELS,
+            'campaign_id': campaign_id,
+            'campaign_label': config['label'],
         },
     )
     if logged_in:
@@ -879,9 +956,14 @@ def healthz():
 
 
 @app.get('/login')
-def login(request: Request):
+def login(request: Request, campaign_id: str = DEFAULT_CAMPAIGN):
+    try:
+        campaign_config(campaign_id)
+    except ValueError as exc:
+        return HTMLResponse(f'<h1>Campaign not found</h1><pre>{exc}</pre>', status_code=404)
     state = secrets.token_urlsafe(32)
     request.session['oauth_state'] = state
+    request.session['oauth_campaign_id'] = campaign_id
     query = urlencode({
         'client_id': CLIENT_ID,
         'redirect_uri': CALLBACK_URL,
@@ -894,6 +976,7 @@ def login(request: Request):
 @app.get('/auth/callback')
 def auth_callback(code: str, state: str, request: Request):
     expected_state = request.session.pop('oauth_state', None)
+    campaign_id = request.session.pop('oauth_campaign_id', DEFAULT_CAMPAIGN)
     if not expected_state or not secrets.compare_digest(state, expected_state):
         return HTMLResponse('<h1>Invalid OAuth state</h1>', status_code=400)
 
@@ -926,29 +1009,31 @@ def auth_callback(code: str, state: str, request: Request):
     )
     user_resp.raise_for_status()
     request.session['username'] = user_resp.json().get('login', 'unknown-user')
-    return RedirectResponse('/')
+    return RedirectResponse(campaign_url(campaign_id))
 
 
 @app.get('/logout')
-def logout(request: Request):
+def logout(request: Request, campaign_id: str = DEFAULT_CAMPAIGN):
     request.session.clear()
-    return RedirectResponse('/')
+    return RedirectResponse(campaign_url(campaign_id))
 
 # Extract GET parameter (used in forms) and redirect
-@app.get('/edit', response_class=HTMLResponse)
-def edit_question_redirect(request: Request):
-    return edit_question(request, request.query_params['key'])
+@app.get('/campaign/{campaign_id}/edit', response_class=HTMLResponse)
+def edit_question_redirect(request: Request, campaign_id: str):
+    return edit_question(request, campaign_id, request.query_params['key'])
 
-@app.get('/edit/{key}', response_class=HTMLResponse)
-def edit_question(request: Request, key: str):
+@app.get('/campaign/{campaign_id}/edit/{key}', response_class=HTMLResponse)
+def edit_question(request: Request, campaign_id: str, key: str):
     token = get_token(request)
     if not token:
-        return RedirectResponse('/login')
+        return RedirectResponse(f'/login?{urlencode({"campaign_id": campaign_id})}')
 
     try:
-        manifest = fetch_path(CAMPAIGN_BRANCH, 'campaign.meta.json', token)['json']
+        branch = campaign_branch(campaign_id)
+        manifest = fetch_path(campaign_id, branch, 'campaign.meta.json', token)['json']
         requested_reference, requested_review = requested_languages(request, manifest)
         manifest, campaign_toc, questions_by_number, reference_language, review_language = load_campaign(
+            campaign_id,
             token,
             requested_reference,
             requested_review,
@@ -958,19 +1043,22 @@ def edit_question(request: Request, key: str):
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
         data_reference = fetch_path(
-            CAMPAIGN_BRANCH,
+            campaign_id,
+            branch,
             f'pool/questions/{question_id}/question.{reference_language}.json',
             token,
         )
         data_review = fetch_path(
-            CAMPAIGN_BRANCH,
+            campaign_id,
+            branch,
             f'pool/questions/{question_id}/question.{review_language}.json',
             token,
         )
-        data_original = fetch_original_question(manifest, question_id, review_language, token)
-        media_manifest = fetch_path(CAMPAIGN_BRANCH, 'media.refs.json', token)['json']
+        data_original = fetch_original_question(campaign_id, manifest, question_id, review_language, token)
+        media_manifest = fetch_path(campaign_id, branch, 'media.refs.json', token)['json']
         data_meta = fetch_path(
-            CAMPAIGN_BRANCH,
+            campaign_id,
+            branch,
             f'pool/questions/{question_id}/question.meta.json',
             token,
         )
@@ -981,8 +1069,8 @@ def edit_question(request: Request, key: str):
         review_media = question_media_urls(review, review_language, media_manifest)
         review_status = data_meta['json'].get('review', {}).get(review_language)
         meta_path = f'pool/questions/{question_id}/question.meta.json'
-        review_status_author = status_author(meta_path, review_language, token)
-        comments_sha, comments = load_comments(question_id, review_language, token)
+        review_status_author = status_author(campaign_id, meta_path, review_language, token)
+        comments_sha, comments = load_comments(campaign_id, question_id, review_language, token)
     except (requests.exceptions.HTTPError, ValueError) as e:
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
@@ -1006,6 +1094,8 @@ def edit_question(request: Request, key: str):
             'review_language': review_language,
             'reference_language_label': LANGUAGE_LABELS.get(reference_language, reference_language.upper()),
             'review_language_label': LANGUAGE_LABELS.get(review_language, review_language.upper()),
+            'campaign_id': campaign_id,
+            'campaign_label': campaign_config(campaign_id)['label'],
             'next_question': campaign_toc.next_q_in_subsection(key),
             'prev_question': campaign_toc.prev_q_in_subsection(key),
             'next_section': campaign_toc.next_q_in_section(key),
@@ -1016,9 +1106,10 @@ def edit_question(request: Request, key: str):
     return response
 
 
-@app.post('/save/{key}')
+@app.post('/campaign/{campaign_id}/save/{key}')
 def save_question(
     request: Request,
+    campaign_id: str,
     key: str,
     sha: str = Form(...),
     meta_sha: str = Form(...),
@@ -1033,11 +1124,12 @@ def save_question(
 ):
     token = get_token(request)
     if not token:
-        return RedirectResponse('/login')
+        return RedirectResponse(f'/login?{urlencode({"campaign_id": campaign_id})}')
     reference_language = request.query_params.get('reference_language')
     review_language = request.query_params.get('review_language')
     try:
         _, _, questions_by_number, reference_language, review_language = load_campaign(
+            campaign_id,
             token,
             reference_language,
             review_language,
@@ -1045,11 +1137,12 @@ def save_question(
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
-        expected_head = ensure_campaign_snapshot(token)['head_sha']
+        branch = campaign_branch(campaign_id)
+        expected_head = ensure_campaign_snapshot(campaign_id, token)['head_sha']
         reviewer = request.session.get('username') or 'unknown'
 
         meta_path = f'pool/questions/{question_id}/question.meta.json'
-        current_meta = fetch_path(CAMPAIGN_BRANCH, meta_path, token)
+        current_meta = fetch_path(campaign_id, branch, meta_path, token)
         if current_meta['sha'] != meta_sha:
             return HTMLResponse(
                 '<h1>Concurrent change detected</h1><p>Reload the question before continuing.</p>',
@@ -1060,20 +1153,21 @@ def save_question(
             updated_meta = meta_with_status(current_meta['json'], question_id, review_language, 'to_be_reviewed')
             if updated_meta != current_meta['json']:
                 commit_campaign_files(
+                    campaign_id,
                     {meta_path: updated_meta},
                     f'Reopen {key} {review_language} review',
                     expected_head,
                     token,
                 )
-                updated_meta_file = fetch_path(CAMPAIGN_BRANCH, meta_path, token)
-                STATUS_AUTHOR_CACHE[(meta_path, review_language, updated_meta_file['sha'])] = reviewer
-            return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)
+                updated_meta_file = fetch_path(campaign_id, branch, meta_path, token)
+                STATUS_AUTHOR_CACHE[(campaign_id, meta_path, review_language, updated_meta_file['sha'])] = reviewer
+            return RedirectResponse(edit_url(campaign_id, key, reference_language, review_language), status_code=303)
 
         if action != 'commit':
             raise ValueError(f'Unsupported review action: {action}.')
 
         content_path = f'pool/questions/{question_id}/question.{review_language}.json'
-        current_content = fetch_path(CAMPAIGN_BRANCH, content_path, token)
+        current_content = fetch_path(campaign_id, branch, content_path, token)
         if current_content['sha'] != sha:
             return HTMLResponse(
                 '<h1>Concurrent change detected</h1><p>Reload the question before committing.</p>',
@@ -1096,7 +1190,7 @@ def save_question(
         current_comments = None
         if comment_text:
             comments_path = f'reviews/{question_id}.json'
-            current_comments = fetch_optional_path(CAMPAIGN_BRANCH, comments_path, token)
+            current_comments = fetch_optional_path(campaign_id, branch, comments_path, token)
             current_comments_sha = current_comments['sha'] if current_comments is not None else ''
             if current_comments_sha != comments_sha:
                 return HTMLResponse(
@@ -1116,23 +1210,24 @@ def save_question(
             changes[meta_path] = updated_meta
         if changes:
             commit_campaign_files(
+                campaign_id,
                 changes,
                 f'Commit {key} {review_language} review',
                 expected_head,
                 token,
             )
             if meta_path in changes:
-                updated_meta_file = fetch_path(CAMPAIGN_BRANCH, meta_path, token)
-                STATUS_AUTHOR_CACHE[(meta_path, review_language, updated_meta_file['sha'])] = reviewer
+                updated_meta_file = fetch_path(campaign_id, branch, meta_path, token)
+                STATUS_AUTHOR_CACHE[(campaign_id, meta_path, review_language, updated_meta_file['sha'])] = reviewer
             if comment_text:
-                updated_comments_file = fetch_path(CAMPAIGN_BRANCH, comments_path, token)
+                updated_comments_file = fetch_path(campaign_id, branch, comments_path, token)
                 old_comment_sha = current_comments['sha'] if current_comments is not None else ''
                 previous_authors = COMMENT_AUTHOR_CACHE.get(
-                    (comments_path, review_language, old_comment_sha),
+                    (campaign_id, comments_path, review_language, old_comment_sha),
                     ['unknown'] * (len(updated_comments['comments'][review_language]) - 1),
                 )
                 COMMENT_AUTHOR_CACHE[
-                    (comments_path, review_language, updated_comments_file['sha'])
+                    (campaign_id, comments_path, review_language, updated_comments_file['sha'])
                 ] = [*previous_authors, reviewer]
     except ValueError as exc:
         return HTMLResponse(f'<h1>Invalid campaign data</h1><pre>{exc}</pre>', status_code=400)
@@ -1146,4 +1241,4 @@ def save_question(
     except requests.exceptions.HTTPError as exc:
         status_code = 409 if exc.response is not None and exc.response.status_code in (409, 422) else 502
         return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=status_code)
-    return RedirectResponse(edit_url(key, reference_language, review_language), status_code=303)
+    return RedirectResponse(edit_url(campaign_id, key, reference_language, review_language), status_code=303)

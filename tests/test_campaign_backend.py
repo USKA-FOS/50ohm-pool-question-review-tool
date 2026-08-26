@@ -17,6 +17,79 @@ import main
 
 
 class CampaignBackendTests(unittest.TestCase):
+    def test_campaign_configuration_supports_multiple_named_branches(self) -> None:
+        configs = main.load_campaign_configs(
+            '{"receiver":{"branch":"campaign/receiver","label":"Receiver review"},'
+            '"antennas":"campaign/antennas"}',
+            None,
+            "receiver",
+        )
+
+        self.assertEqual(configs["receiver"]["branch"], "campaign/receiver")
+        self.assertEqual(configs["receiver"]["label"], "Receiver review")
+        self.assertEqual(configs["antennas"]["branch"], "campaign/antennas")
+        with self.assertRaisesRegex(RuntimeError, "DEFAULT_CAMPAIGN"):
+            main.load_campaign_configs('{"receiver":"campaign/receiver"}', None, "missing")
+
+    def test_campaign_snapshots_are_isolated_by_campaign(self) -> None:
+        configs = {
+            "first": {"branch": "campaign/first", "label": "First"},
+            "second": {"branch": "campaign/second", "label": "Second"},
+        }
+        snapshots = {
+            "first-head": {"campaign.meta.json": {"sha": "first", "json": {}}},
+            "first-export": {"campaign.meta.json": {"sha": "first-export", "json": {}}},
+            "second-head": {"campaign.meta.json": {"sha": "second", "json": {}}},
+            "second-export": {"campaign.meta.json": {"sha": "second-export", "json": {}}},
+        }
+        with (
+            patch.object(main, "CAMPAIGNS", configs),
+            patch.object(main, "CAMPAIGN_SNAPSHOTS", {}),
+            patch.object(
+                main,
+                "campaign_branch_head",
+                side_effect=lambda campaign_id, token: f"{campaign_id}-head",
+            ),
+            patch.object(
+                main,
+                "oldest_campaign_commit_for_path",
+                side_effect=lambda campaign_id, path, token: f"{campaign_id}-export",
+            ),
+            patch.object(
+                main,
+                "download_campaign_snapshot",
+                side_effect=lambda ref, token: snapshots[ref],
+            ),
+        ):
+            first = main.ensure_campaign_snapshot("first", "token")
+            second = main.ensure_campaign_snapshot("second", "token")
+
+        self.assertEqual(first["head_sha"], "first-head")
+        self.assertEqual(second["head_sha"], "second-head")
+        self.assertIsNot(first, second)
+
+    def test_campaign_urls_include_the_campaign_identifier(self) -> None:
+        self.assertEqual(main.campaign_url("receiver"), "/campaign/receiver/")
+        self.assertEqual(
+            main.edit_url("receiver", "NF101", "de", "fr"),
+            "/campaign/receiver/edit/NF101?reference_language=de&review_language=fr",
+        )
+
+    def test_login_remembers_the_requested_campaign_for_oauth_callback(self) -> None:
+        request = SimpleNamespace(session={})
+
+        response = main.login(request, "default")
+
+        self.assertEqual(response.status_code, 307)
+        self.assertEqual(request.session["oauth_campaign_id"], "default")
+        self.assertTrue(request.session["oauth_state"])
+        self.assertIn("github.com/login/oauth/authorize", response.headers["location"])
+
+    def test_login_rejects_an_unconfigured_campaign(self) -> None:
+        response = main.login(SimpleNamespace(session={}), "missing")
+
+        self.assertEqual(response.status_code, 404)
+
     def test_original_question_uses_export_snapshot(self) -> None:
         manifest = {
             "question_ids": ["q_111111111111"],
@@ -29,27 +102,29 @@ class CampaignBackendTests(unittest.TestCase):
             }
         }
         with patch.object(main, "ensure_campaign_snapshot", return_value=snapshot) as ensure:
-            result = main.fetch_original_question(manifest, "q_111111111111", "fr", "token")
+            result = main.fetch_original_question(
+                "default", manifest, "q_111111111111", "fr", "token"
+            )
 
         self.assertIs(result, expected)
-        ensure.assert_called_once_with("token")
+        ensure.assert_called_once_with("default", "token")
 
     def test_campaign_snapshot_is_loaded_only_once(self) -> None:
         current = {"campaign.meta.json": {"sha": "meta", "json": {}}}
         original = {"campaign.meta.json": {"sha": "original-meta", "json": {}}}
         with (
-            patch.object(main, "CAMPAIGN_SNAPSHOT", None),
+            patch.object(main, "CAMPAIGN_SNAPSHOTS", {}),
             patch.object(main, "campaign_branch_head", return_value="head") as branch_head,
             patch.object(main, "oldest_campaign_commit_for_path", return_value="export") as oldest,
             patch.object(main, "download_campaign_snapshot", side_effect=[current, original]) as download,
         ):
-            first = main.ensure_campaign_snapshot("token")
-            second = main.ensure_campaign_snapshot("token")
+            first = main.ensure_campaign_snapshot("default", "token")
+            second = main.ensure_campaign_snapshot("default", "token")
 
         self.assertIs(first, second)
         self.assertEqual(first["head_sha"], "head")
-        branch_head.assert_called_once_with("token")
-        oldest.assert_called_once_with("campaign.meta.json", "token")
+        branch_head.assert_called_once_with("default", "token")
+        oldest.assert_called_once_with("default", "campaign.meta.json", "token")
         self.assertEqual(download.call_count, 2)
 
     def test_expired_snapshot_refreshes_only_current_archive_when_head_changed(self) -> None:
@@ -62,14 +137,14 @@ class CampaignBackendTests(unittest.TestCase):
         }
         refreshed = {"campaign.meta.json": {"sha": "meta", "json": {}}}
         with (
-            patch.object(main, "CAMPAIGN_SNAPSHOT", old_snapshot),
+            patch.object(main, "CAMPAIGN_SNAPSHOTS", {"default": old_snapshot}),
             patch.object(main, "CAMPAIGN_REFRESH_SECONDS", 30.0),
             patch.object(main.time, "monotonic", return_value=60.0),
             patch.object(main, "campaign_branch_head", return_value="new-head"),
             patch.object(main, "download_campaign_snapshot", return_value=refreshed) as download,
             patch.object(main, "oldest_campaign_commit_for_path") as oldest,
         ):
-            result = main.ensure_campaign_snapshot("token")
+            result = main.ensure_campaign_snapshot("default", "token")
 
         self.assertEqual(result["head_sha"], "new-head")
         self.assertIs(result["current_files"], refreshed)
@@ -90,7 +165,9 @@ class CampaignBackendTests(unittest.TestCase):
         )
 
         with patch.object(main, "github_request", side_effect=[first_page, last_page]) as request:
-            result = main.oldest_campaign_commit_for_path("pool/questions/q/question.fr.json", "token")
+            result = main.oldest_campaign_commit_for_path(
+                "default", "pool/questions/q/question.fr.json", "token"
+            )
 
         self.assertEqual(result, "oldest")
         self.assertEqual(request.call_count, 2)
@@ -156,10 +233,12 @@ class CampaignBackendTests(unittest.TestCase):
         }
 
         with (
-            patch.object(main, "CAMPAIGN_SNAPSHOT", snapshot),
+            patch.object(main, "CAMPAIGN_SNAPSHOTS", {"default": snapshot}),
             patch.object(main, "github_request", return_value=response) as request,
         ):
-            result = main.commit_campaign_files(changes, "Commit review", "old-head", "token")
+            result = main.commit_campaign_files(
+                "default", changes, "Commit review", "old-head", "token"
+            )
 
         self.assertEqual(result, "new-head")
         self.assertEqual(snapshot["head_sha"], "new-head")
@@ -343,10 +422,10 @@ class CampaignBackendTests(unittest.TestCase):
         with patch.object(
             main,
             "fetch_path",
-            side_effect=lambda ref, path, token: {"sha": path, "json": payloads[path]},
+            side_effect=lambda campaign_id, ref, path, token: {"sha": path, "json": payloads[path]},
         ):
             loaded_manifest, campaign_toc, questions, reference_language, review_language = main.load_campaign(
-                "token"
+                "default", "token"
             )
 
         self.assertEqual(loaded_manifest, manifest)
@@ -446,6 +525,8 @@ class CampaignBackendTests(unittest.TestCase):
             review_language="fr",
             remembered_question="NF101",
             language_labels=main.LANGUAGE_LABELS,
+            campaign_id="default",
+            campaign_label="Test campaign",
         )
         self.assertIn('name="reference_language"', index_html)
         self.assertIn('name="review_language"', index_html)
@@ -497,6 +578,8 @@ class CampaignBackendTests(unittest.TestCase):
             "review_language": "fr",
             "reference_language_label": "German",
             "review_language_label": "French",
+            "campaign_id": "default",
+            "campaign_label": "Test campaign",
             "next_question": "NF102",
             "prev_question": None,
             "next_section": None,
@@ -513,11 +596,11 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertIn("diff removed", editor_html)
         self.assertIn("diff added", editor_html)
         self.assertIn(
-            "/edit/NF102?reference_language=de&review_language=fr",
+            "/campaign/default/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
         )
         self.assertIn(
-            "/?reference_language=de&review_language=fr",
+            "/campaign/default/?reference_language=de&review_language=fr",
             editor_html,
         )
         self.assertIn("Campaign overview", editor_html)
@@ -569,7 +652,7 @@ class CampaignBackendTests(unittest.TestCase):
             patch.object(
                 main,
                 "fetch_path",
-                side_effect=lambda ref, path, token: {
+                side_effect=lambda campaign_id, ref, path, token: {
                     "pool/questions/q_111111111111/question.meta.json": {
                         "sha": "meta-sha",
                         "json": meta,
@@ -590,6 +673,7 @@ class CampaignBackendTests(unittest.TestCase):
         ):
             response = main.save_question(
                 request=request,
+                campaign_id="default",
                 key="NF101",
                 sha="content-sha",
                 meta_sha="meta-sha",
@@ -605,7 +689,8 @@ class CampaignBackendTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         commit_files.assert_called_once()
-        changes, message, expected_head, token = commit_files.call_args.args
+        campaign_id, changes, message, expected_head, token = commit_files.call_args.args
+        self.assertEqual(campaign_id, "default")
         self.assertEqual(changes["pool/questions/q_111111111111/question.fr.json"]["question"], "Question corrigée?")
         self.assertEqual(changes["reviews/q_111111111111.json"]["comments"]["fr"], ["Motif utile"])
         self.assertEqual(changes["pool/questions/q_111111111111/question.meta.json"]["review"]["fr"], "approved")
@@ -644,6 +729,7 @@ class CampaignBackendTests(unittest.TestCase):
         ):
             response = main.save_question(
                 request=request,
+                campaign_id="default",
                 key="NF101",
                 sha="content-sha",
                 meta_sha="meta-sha",
@@ -653,7 +739,8 @@ class CampaignBackendTests(unittest.TestCase):
 
         self.assertEqual(response.status_code, 303)
         commit_files.assert_called_once()
-        changes = commit_files.call_args.args[0]
+        campaign_id, changes = commit_files.call_args.args[:2]
+        self.assertEqual(campaign_id, "default")
         self.assertEqual(list(changes), ["pool/questions/q_111111111111/question.meta.json"])
         self.assertEqual(changes["pool/questions/q_111111111111/question.meta.json"]["review"]["fr"], "to_be_reviewed")
 
@@ -695,6 +782,7 @@ class CampaignBackendTests(unittest.TestCase):
         ):
             response = main.save_question(
                 request=request,
+                campaign_id="default",
                 key="NF101",
                 sha="old-content-sha",
                 meta_sha="meta-sha",
@@ -720,9 +808,13 @@ class CampaignBackendTests(unittest.TestCase):
             patch.object(main, "STATUS_AUTHOR_CACHE", {}),
             patch.object(main, "fetch_path", return_value={"sha": "current-meta", "json": {}}),
             patch.object(main, "github_commits_for_path", return_value=[commit]),
-            patch.object(main, "fetch_optional_path", side_effect=lambda ref, path, token: versions[ref]),
+            patch.object(
+                main,
+                "fetch_optional_path",
+                side_effect=lambda campaign_id, ref, path, token: versions[ref],
+            ),
         ):
-            author = main.status_author("question.meta.json", "fr", "token")
+            author = main.status_author("default", "question.meta.json", "fr", "token")
 
         self.assertEqual(author, "status-reviewer")
 
@@ -740,7 +832,7 @@ class CampaignBackendTests(unittest.TestCase):
             "commit": {"author": {"name": "Second"}},
         }
         versions = {
-            main.CAMPAIGN_BRANCH: {
+            "campaign/test": {
                 "sha": "current-blob",
                 "json": {
                     "schema_version": 1,
@@ -759,9 +851,15 @@ class CampaignBackendTests(unittest.TestCase):
         }
         with (
             patch.object(main, "github_commits_for_path", return_value=[new_commit, old_commit]),
-            patch.object(main, "fetch_optional_path", side_effect=lambda ref, path, token: versions[ref]),
+            patch.object(
+                main,
+                "fetch_optional_path",
+                side_effect=lambda campaign_id, ref, path, token: versions[ref],
+            ),
         ):
-            sha, comments = main.load_comments("q_111111111111", "fr", "token")
+            sha, comments = main.load_comments(
+                "default", "q_111111111111", "fr", "token"
+            )
 
         self.assertEqual(sha, "current-blob")
         self.assertEqual(comments[0]["author"], "first-reviewer")

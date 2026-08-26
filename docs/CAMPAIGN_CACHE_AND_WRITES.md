@@ -7,7 +7,7 @@ n'est plus utilisé comme un système de fichiers distant pour chaque affichage.
 
 ## Initialisation
 
-Au premier accès authentifié d'une instance, l'application :
+Au premier accès authentifié à une campagne, l'application :
 
 1. résout le SHA courant de la branche de campagne ;
 2. résout le commit ayant introduit `campaign.meta.json` ;
@@ -27,6 +27,10 @@ aucun appel GitHub. Au maximum une fois toutes les
 `CAMPAIGN_REFRESH_SECONDS`, l'application contrôle le SHA de tête. Si celui-ci
 a changé, elle recharge uniquement l'archive courante. La valeur par défaut est
 30 secondes.
+
+Chaque campagne possède son propre snapshot, indexé par l'identifiant présent
+dans l'URL. Une actualisation ou une écriture dans une campagne ne remplace pas
+le snapshot d'une autre campagne.
 
 Le cache est éphémère. Une nouvelle instance ou un cache invalidé reconstruit
 toujours son état depuis GitHub.
@@ -55,6 +59,7 @@ jetable ; les fichiers de campagne ne reçoivent aucun champ d'auteur.
 ## Invariants
 
 - aucune donnée locale n'est considérée persistée avant la réussite GitHub ;
+- les snapshots et caches dérivés sont isolés par campagne ;
 - aucune écriture ne remplace silencieusement un commit concurrent ;
 - les originaux d'export ne sont jamais modifiés ;
 - le cache peut être supprimé sans perte de travail ;

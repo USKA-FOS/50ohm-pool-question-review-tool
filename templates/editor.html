@@ -4,8 +4,8 @@
 {% set review_open = review_status != 'approved' %}
 
 <div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
-    <h2>Question: <code>{{ key }}</code></h2>
-    <a class="btn btn-outline-secondary" href="/?reference_language={{reference_language}}&review_language={{review_language}}">Campaign overview</a>
+    <h2>{{ campaign_label }} · Question: <code>{{ key }}</code></h2>
+    <a class="btn btn-outline-secondary" href="/campaign/{{ campaign_id }}/?reference_language={{reference_language}}&review_language={{review_language}}">Campaign overview</a>
 </div>
 
 <div class="row my-3">
@@ -108,7 +108,7 @@
     </aside>
 </div>
 
-<form action="/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
+<form action="/campaign/{{ campaign_id }}/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
     <input type="hidden" name="sha" value="{{ sha }}">
     <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
     <input type="hidden" name="comments_sha" value="{{ comments_sha }}">
@@ -151,15 +151,15 @@
     </div>
     <div class="row my-3">
         <div class="col d-flex flex-wrap justify-content-center gap-2">
-            <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>
-            <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/edit/{{prev_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Question ←</a>
+            <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/campaign/{{ campaign_id }}/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>
+            <a class="btn btn-primary {%if prev_question is none %}disabled{%endif%}" role="button" href="/campaign/{{ campaign_id }}/edit/{{prev_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Question ←</a>
             {% if review_open %}
             <button class="btn btn-success" type="submit" name="action" value="commit">Commit</button>
             {% else %}
             <button class="btn btn-outline-secondary" type="submit" name="action" value="reopen">Reopen</button>
             {% endif %}
-            <a class="btn btn-primary {%if next_question is none %}disabled{%endif%}" role="button" href="/edit/{{next_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >→ Next Question</a>
-            <a class="btn btn-primary {%if next_section is none %}disabled{%endif%}" role="button" href="/edit/{{next_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >→→ Next Section</a>
+            <a class="btn btn-primary {%if next_question is none %}disabled{%endif%}" role="button" href="/campaign/{{ campaign_id }}/edit/{{next_question}}?reference_language={{reference_language}}&review_language={{review_language}}" >→ Next Question</a>
+            <a class="btn btn-primary {%if next_section is none %}disabled{%endif%}" role="button" href="/campaign/{{ campaign_id }}/edit/{{next_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >→→ Next Section</a>
         </div>
     </div>
 </form>

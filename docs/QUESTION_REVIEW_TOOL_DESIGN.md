@@ -27,8 +27,9 @@ working memory. The application itself has no business database.
 
 ## Campaign model
 
-One deployment is configured for one campaign branch through
-`GITHUB_OWNER`, `GITHUB_REPO`, and `CAMPAIGN_BRANCH`. The branch contains:
+One deployment serves one or more named campaign branches through
+`GITHUB_OWNER`, `GITHUB_REPO`, `CAMPAIGNS_JSON`, and `DEFAULT_CAMPAIGN`.
+Each campaign is exposed under `/campaign/<campaign-id>/`. A branch contains:
 
 - `campaign.meta.json`, including immutable canonical provenance, scope,
   available languages, and editable languages;
@@ -58,19 +59,26 @@ database. Request processing is synchronous.
 
 ## Read path and cache
 
-On the first authenticated request, the service loads two repository archives:
+On the first authenticated request for a campaign, the service loads two
+repository archives:
 
 - the current campaign branch snapshot;
 - the immutable campaign export snapshot used for text differences.
 
-JSON files are parsed into an in-memory snapshot. Navigation and question reads
+JSON files are parsed into an in-memory snapshot keyed by campaign id.
+Navigation and question reads
 then require no per-file GitHub request. After `CAMPAIGN_REFRESH_SECONDS`, the
 service checks only the remote branch head. It downloads a new current archive
 only when that head changed. The original export snapshot never changes.
 
 Git blob hashes are computed locally so forms can still detect stale content.
 Status and comment authors are derived from Git commit history and cached by
-blob hash.
+campaign id and blob hash.
+
+The root URL redirects to `DEFAULT_CAMPAIGN`. Review URLs have the stable form
+`/campaign/<campaign-id>/...`. GitHub OAuth uses one callback URL for the whole
+deployment; the requested campaign id is kept in the signed session while the
+reviewer authenticates and is used for the post-login redirect.
 
 ## Review interaction
 
@@ -150,8 +158,9 @@ Campaign comments and generated navigation are never canonical input.
 
 ## Limitations
 
-- One running deployment serves one configured campaign branch. Switching
-  campaigns currently requires configuration and restart.
+- Campaigns must be declared in `CAMPAIGNS_JSON`; the interface does not
+  discover arbitrary repository branches or offer an unrestricted branch
+  selector.
 - The in-memory cache is process-local. Multiple application instances each
   maintain their own snapshot and observe remote changes on their next head
   check.
@@ -164,8 +173,8 @@ Campaign comments and generated navigation are never canonical input.
 - The OAuth access token is stored in Starlette's signed client-side session
   cookie. The cookie is integrity-protected but not encrypted. A production
   hardening step should move tokens to server-side session storage.
-- All reviewers share one branch. Git prevents silent overwrites, but the tool
-  has no reservation or question-lock mechanism.
+- All reviewers in one campaign share its branch. Git prevents silent
+  overwrites, but the tool has no reservation or question-lock mechanism.
 - Comments are append-only in the interface and cannot be edited or deleted.
 - Drawing display requires the public GitHub raw-content service. URLs are
   resolved from `media.refs.json` at its immutable media commit; private media
