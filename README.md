@@ -62,6 +62,10 @@ last opened question in persistent preference cookies. On a later visit, valid
 preferences are restored automatically. Values that are not available in the
 current campaign are ignored.
 
+Campaign progress is calculated from the current `question.meta.json` files,
+not from review statuses copied into the derived navigation index at export
+time. `Commit` and `Reopen` are therefore reflected on the overview immediately.
+
 The current campaign integration loads the current branch and its original
 export as two GitHub archives, then serves navigation and question reads from
 an in-memory snapshot. The remote branch head is checked at most once per

@@ -3,7 +3,10 @@
 {% block content %}
 {% set review_open = review_status != 'approved' %}
 
-<h2>Question: <code>{{ key }}</code></h2>
+<div class="d-flex flex-wrap align-items-center justify-content-between gap-2">
+    <h2>Question: <code>{{ key }}</code></h2>
+    <a class="btn btn-outline-secondary" href="/?reference_language={{reference_language}}&review_language={{review_language}}">Campaign overview</a>
+</div>
 
 <div class="row my-3">
     <div class="col-lg-4">

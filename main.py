@@ -728,11 +728,16 @@ def load_campaign(token, requested_reference=None, requested_review=None, manife
     for item in navigation_index['items']:
         question_id = item['question_id']
         number = item['internal_code']
+        meta_path = f'pool/questions/{question_id}/question.meta.json'
+        current_meta = fetch_path(CAMPAIGN_BRANCH, meta_path, token)['json']
+        if current_meta.get('id') != question_id:
+            raise ValueError(f'Question metadata id does not match {question_id}.')
+        current_review = current_meta.get('review', {})
         questions_by_number[number] = {
             'question_id': question_id,
-            'review': item['review'],
+            'review': current_review,
         }
-        if item.get('review', {}).get(review_language) == 'approved':
+        if current_review.get(review_language) == 'approved':
             campaign_toc.mark_reviewed(number)
     return manifest, campaign_toc, questions_by_number, reference_language, review_language
 

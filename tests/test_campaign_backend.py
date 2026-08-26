@@ -277,7 +277,7 @@ class CampaignBackendTests(unittest.TestCase):
                 {
                     "question_id": "q_111111111111",
                     "internal_code": "NF101",
-                    "review": {"de": "approved", "fr": "approved"},
+                    "review": {"de": "approved", "fr": "to_be_reviewed"},
                 },
                 {
                     "question_id": "q_222222222222",
@@ -295,6 +295,18 @@ class CampaignBackendTests(unittest.TestCase):
             "campaign.meta.json": manifest,
             "derived/question_pool_ch-de.json": navigation,
             "derived/navigation.index.json": index,
+            "pool/questions/q_111111111111/question.meta.json": {
+                "id": "q_111111111111",
+                "review": {"de": "approved", "fr": "approved"},
+            },
+            "pool/questions/q_222222222222/question.meta.json": {
+                "id": "q_222222222222",
+                "review": {"de": "approved", "fr": "to_be_reviewed"},
+            },
+            "pool/questions/q_333333333333/question.meta.json": {
+                "id": "q_333333333333",
+                "review": {"de": "approved", "fr": "to_be_reviewed"},
+            },
         }
 
         with patch.object(
@@ -455,6 +467,11 @@ class CampaignBackendTests(unittest.TestCase):
             "/edit/NF102?reference_language=de&review_language=fr",
             editor_html,
         )
+        self.assertIn(
+            "/?reference_language=de&review_language=fr",
+            editor_html,
+        )
+        self.assertIn("Campaign overview", editor_html)
         self.assertIn('value="commit">Commit</button>', editor_html)
         self.assertNotIn("Add comment", editor_html)
         layout_html = main.templates.get_template("layout.html").render(request=request)
