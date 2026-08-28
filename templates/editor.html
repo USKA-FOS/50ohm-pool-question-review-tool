@@ -120,35 +120,37 @@
             </div>
         </div>
 
-        <div class="col-lg-4">
+        <div class="col-lg-8">
             <h4>Edit Answers:</h4>
-            <div class="mb-2">
-                <label>A (✔)</label>
-                <input name="answer_a" class="form-control" value="{{ review.answer_a }}" {% if not review_open or review.answer_a is none or review.answer_a == '' %}disabled{% endif %}>
+            <div class="answer-edit-row mb-2">
+                <label class="answer-letter" for="answer-a">A</label>
+                <textarea id="answer-a" name="answer_a" class="form-control answer-textarea" rows="2" {% if not review_open or review.answer_a is none or review.answer_a == '' %}disabled{% endif %}>{{ review.answer_a or '' }}</textarea>
             </div>
 
-            <div class="mb-2">
-                <label>B (❌)</label>
-                <input name="answer_b" class="form-control" value="{{ review.answer_b }}" {% if not review_open or review.answer_b is none or review.answer_b == '' %}disabled{% endif %}>
+            <div class="answer-edit-row mb-2">
+                <label class="answer-letter" for="answer-b">B</label>
+                <textarea id="answer-b" name="answer_b" class="form-control answer-textarea" rows="2" {% if not review_open or review.answer_b is none or review.answer_b == '' %}disabled{% endif %}>{{ review.answer_b or '' }}</textarea>
             </div>
 
-            <div class="mb-2">
-                <label>C (❌)</label>
-                <input name="answer_c" class="form-control" value="{{ review.answer_c }}" {% if not review_open or review.answer_c is none or review.answer_c == '' %}disabled{% endif %}>
+            <div class="answer-edit-row mb-2">
+                <label class="answer-letter" for="answer-c">C</label>
+                <textarea id="answer-c" name="answer_c" class="form-control answer-textarea" rows="2" {% if not review_open or review.answer_c is none or review.answer_c == '' %}disabled{% endif %}>{{ review.answer_c or '' }}</textarea>
             </div>
 
-            <div class="mb-2">
-                <label>D (❌)</label>
-                <input name="answer_d" class="form-control" value="{{ review.answer_d }}"{% if not review_open or review.answer_d is none or review.answer_d == '' %}disabled{% endif %}>
+            <div class="answer-edit-row mb-2">
+                <label class="answer-letter" for="answer-d">D</label>
+                <textarea id="answer-d" name="answer_d" class="form-control answer-textarea" rows="2" {% if not review_open or review.answer_d is none or review.answer_d == '' %}disabled{% endif %}>{{ review.answer_d or '' }}</textarea>
             </div>
         </div>
-        {% if review_open %}
-        <div class="col-lg-4">
-            <label for="commit-comment" class="form-label">Comment (optional)</label>
-            <textarea id="commit-comment" name="comment" class="form-control" rows="10"></textarea>
-        </div>
-        {% endif %}
     </div>
+    {% if review_open %}
+    <div class="row my-3">
+        <div class="col-12">
+            <label for="commit-comment" class="form-label">Comment (optional)</label>
+            <textarea id="commit-comment" name="comment" class="form-control" rows="3"></textarea>
+        </div>
+    </div>
+    {% endif %}
     <div class="row my-3">
         <div class="col d-flex flex-wrap justify-content-center gap-2">
             <a class="btn btn-primary {%if prev_section is none %}disabled{%endif%}" role="button" href="/campaign/{{ campaign_id }}/edit/{{prev_section}}?reference_language={{reference_language}}&review_language={{review_language}}" >Previous Section ←←</a>

@@ -8,6 +8,30 @@ textarea.form-control, input.form-control {
     font-family: "Roboto Mono", "Courier New", monospace;
 }
 
+textarea.form-control {
+    resize: vertical;
+}
+
+.answer-edit-row {
+    align-items: start;
+    display: grid;
+    gap: 12px;
+    grid-template-columns: 32px minmax(0, 1fr);
+}
+
+.answer-letter {
+    font-size: 1rem;
+    font-weight: 700;
+    line-height: 1.5;
+    padding-top: 7px;
+    text-align: center;
+}
+
+.answer-textarea {
+    min-height: 62px;
+    width: 100%;
+}
+
 /* Buttons spacing */
 button, a.btn {
     margin-top: 8px;

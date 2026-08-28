@@ -52,9 +52,11 @@ proposés ensemble à la réintégration canonical.
 - indicateur bloquant `Please wait. Working with GitHub...` pendant les
   formulaires et la navigation interne, masqué explicitement à la fin du
   chargement ou lors de la restauration d'une page ;
-- mise en page large en trois colonnes égales, avec la langue source marquée
-  `(Reference)`, le statut et l'historique en colonne latérale, et le
-  commentaire à côté de l'éditeur ;
+- zone de comparaison large en trois colonnes égales, avec la langue source
+  marquée `(Reference)` et le statut et l'historique en colonne latérale ;
+- zone d'édition avec la question sur un tiers, les réponses sur les deux tiers
+  restants dans des champs de deux lignes redimensionnables, et le commentaire
+  sous les éditeurs ;
 - importeur canonical avec contrôle `--dry-run` puis application explicite des
   seuls couples `ready`.
 

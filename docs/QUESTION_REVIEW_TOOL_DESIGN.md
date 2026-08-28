@@ -102,7 +102,9 @@ The editor displays:
 - the selected reference-language text;
 - current review status and Git-derived author;
 - existing comments and their Git-derived authors;
-- editable question and answer fields for the active language;
+- an editable question field occupying one desktop column;
+- full-width two-line answer text areas occupying the other two columns, with
+  A-D labels beside the fields and vertical resize handles;
 - an optional comment field and ordered navigation controls.
 
 `null` and empty strings remain distinct. Image-backed `null` fields are not

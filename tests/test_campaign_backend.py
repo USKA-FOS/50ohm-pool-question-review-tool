@@ -606,6 +606,13 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertIn("Campaign overview", editor_html)
         self.assertIn('value="commit">Commit</button>', editor_html)
         self.assertNotIn("Add comment", editor_html)
+        self.assertIn('<div class="col-lg-8">\n            <h4>Edit Answers:</h4>', editor_html)
+        self.assertIn('for="answer-a">A</label>', editor_html)
+        self.assertIn(
+            'name="answer_a" class="form-control answer-textarea" rows="2"',
+            editor_html,
+        )
+        self.assertIn('name="comment" class="form-control" rows="3"', editor_html)
         layout_html = main.templates.get_template("layout.html").render(request=request)
         self.assertIn("Please wait. Working with GitHub...", layout_html)
         self.assertIn('aria-hidden="true" hidden', layout_html)
@@ -616,6 +623,10 @@ class CampaignBackendTests(unittest.TestCase):
         approved_html = editor_template.render(**editor_context)
         self.assertIn('value="reopen">Reopen</button>', approved_html)
         self.assertIn('name="question" class="form-control" rows="10" disabled', approved_html)
+        self.assertIn(
+            'name="answer_a" class="form-control answer-textarea" rows="2" disabled',
+            approved_html,
+        )
 
     def test_commit_updates_text_comment_and_status(self) -> None:
         request = SimpleNamespace(

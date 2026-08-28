@@ -138,10 +138,12 @@ Forms and internal navigation display a blocking
 operation is running. It is reset on both normal page loads and browser page
 restoration.
 
-The editor uses the available desktop width in three equal columns: the source
-language is labelled `(Reference)`, status and comment history are shown in a
-side column, and the optional commit comment is placed beside the question and
-answer editors.
+The comparison area uses the available desktop width in three equal columns:
+the source language is labelled `(Reference)`, and status and comment history
+are shown in the third column. In the edit area, the question occupies one
+third and the four answer editors use the remaining two thirds. Answer letters
+sit directly beside two-line, vertically resizable text areas. The optional
+commit comment is placed below the text editors.
 
 Previous/next question navigation stays inside the displayed chapter.
 Previous/next section navigation follows the complete ordered list of selected
