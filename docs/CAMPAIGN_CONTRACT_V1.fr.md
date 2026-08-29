@@ -39,8 +39,10 @@ générés depuis le canonical lors de l'export. Chaque langue déclarée dans
 `question_pool_ch-<langue>.json`. Sa structure contient toujours trois niveaux
 non vides avant les questions : `chapter.sections`, `section.sections`, puis
 `subsection.questions`. Cette structure reste obligatoire même pour une
-campagne monolingue ou une simple liste explicite de questions ; l'exporteur
-crée alors les niveaux synthétiques nécessaires.
+campagne monolingue ou une simple liste explicite de questions. Pour chaque
+question sélectionnée, l'exporteur retrouve sa sous-section canonique et
+reconstruit ses véritables ancêtres, titres et ordres. Il filtre uniquement les
+questions hors périmètre. Une navigation synthétique est interdite.
 
 `navigation.index.json` relie chaque `number` affiché au `question_id`
 canonique. Ses codes doivent couvrir exactement les questions des catalogues
@@ -51,9 +53,10 @@ Ces fichiers ne sont jamais modifiés par les réviseurs et ne sont pas importé
 dans le canonical. Toute campagne, quel que soit son filtre de sélection, doit
 les régénérer.
 
-Les quatre fichiers placés sous `pool/questions/<question_id>/` gardent
-exactement le schéma du canonical. Aucun champ propre à l'outil de révision
-n'est ajouté aux fichiers `question.<langue>.json`.
+Le fichier de métadonnées et les fichiers linguistiques placés sous
+`pool/questions/<question_id>/` gardent exactement le schéma du canonical.
+Aucun champ propre à l'outil de révision n'est ajouté aux fichiers
+`question.<langue>.json`.
 
 Les valeurs textuelles `null` et `""` restent distinctes. Un `null` n'est
 valide que si le champ d'image correspondant est renseigné. Une chaîne vide est
