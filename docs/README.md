@@ -10,6 +10,7 @@
 - [Cache de campagne et écritures atomiques](CAMPAIGN_CACHE_AND_WRITES.md)
 - [Question review tool design](QUESTION_REVIEW_TOOL_DESIGN.md)
 - [Transfert du depot de campagnes vers USKA-FOS](CAMPAIGN_REPOSITORY_TRANSFER_TO_USKA_FOS.fr.md)
+- [Petites améliorations à regrouper](SMALL_IMPROVEMENTS_BACKLOG.fr.md)
 
 The application is being adapted incrementally. It currently reads an exported
 canonical campaign from GitHub, displays its derived table of contents, and

@@ -54,6 +54,20 @@ The server redirects `http://localhost:8080` to the default campaign at
 `http://localhost:8080/campaign/receiver-signals/`. Its health endpoint is
 `http://localhost:8080/healthz`.
 
+For repeatable local use, the dedicated Compose file avoids the production
+reverse-proxy network and reads the same private environment and campaign map:
+
+```bash
+docker compose -f docker-compose.local.yml up -d --build
+docker compose -f docker-compose.local.yml logs -f
+```
+
+Stop and remove only this local deployment with:
+
+```bash
+docker compose -f docker-compose.local.yml down
+```
+
 `CAMPAIGNS_FILE` is the preferred campaign configuration. It points to a JSON
 file mapping stable URL identifiers to Git branches and optional display
 labels. Start from the tracked examples:
