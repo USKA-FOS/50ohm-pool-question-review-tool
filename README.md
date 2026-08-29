@@ -119,6 +119,8 @@ After GitHub login, the interface reads `languages` and `editable_languages`
 from `campaign.meta.json`. The reference and review languages are selected in
 the table-of-contents page and carried through every navigation link. They may
 be identical, which supports DE→DE, FR→FR, and IT→IT linguistic reviews.
+Campaigns may contain only one language; in that case the same language is
+selected automatically for reference and review.
 Only a language listed in `editable_languages` can be selected for review. The
 current example campaign exports and makes editable German, French, and
 Italian, so all nine reference/review combinations are available.

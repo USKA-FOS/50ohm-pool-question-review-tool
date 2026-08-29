@@ -140,7 +140,9 @@ operator-controlled process in `50ohm-question-pool`:
 6. commit and push the complete canonical change.
 
 Only approved, valid, non-conflicting question/language pairs are imported.
-Campaign comments and generated navigation are never canonical input.
+Campaign comments and generated navigation are never canonical input. Import
+reports may snapshot the comments for traceability while keeping them outside
+canonical question content and metadata.
 
 ## Principal properties
 

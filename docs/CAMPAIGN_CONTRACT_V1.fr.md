@@ -117,6 +117,8 @@ une à trois langues et définit l'ensemble des langues que la campagne autorise
 à modifier. Dans l'interface, `review_language` désigne seulement la langue
 active à un instant donné. Changer cette sélection ne retire pas les
 modifications ou approbations déjà enregistrées dans les autres langues.
+Une campagne peut ne contenir qu'une seule langue dans `languages`; cette
+langue sert alors à la fois de référence et de langue à réviser.
 
 L'export échoue si une langue modifiable n'est pas dans `languages`, si une
 question est répétée, absente du canonical, ou si les références Git ne peuvent
@@ -178,6 +180,9 @@ Il est placé hors du sous-ensemble canonical :
 Le fichier est absent lorsqu'aucun commentaire n'existe. Il ne contient ni nom
 de réviseur ni date : Git fournit déjà l'auteur, la date, le diff et l'ordre des
 opérations. Le répertoire `reviews/` n'est jamais importé dans le canonical.
+L'importeur du question pool recopie toutefois les commentaires, par question
+et par langue, dans ses rapports JSON et Markdown. Cette copie constitue une
+trace d'audit liée au commit de campagne, pas une donnée canonique.
 
 L'interface affiche néanmoins l'auteur de chaque commentaire. Elle le déduit du
 commit Git qui a introduit l'entrée correspondante dans

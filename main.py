@@ -127,6 +127,8 @@ app.add_middleware(
 )
 app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
+STATIC_VERSION = hashlib.sha256(Path('static/style.css').read_bytes()).hexdigest()[:12]
+templates.env.globals['static_version'] = STATIC_VERSION
 
 
 def record_github_profile(operation, resource, duration_ms, status):
@@ -794,8 +796,8 @@ def edit_url(campaign_id, key, reference_language, review_language):
 def select_languages(manifest, requested_reference=None, requested_review=None):
     languages = manifest.get('languages', [])
     editable_languages = manifest.get('editable_languages', [])
-    if len(languages) < 2:
-        raise ValueError('A review campaign requires at least two languages.')
+    if not languages:
+        raise ValueError('A review campaign requires at least one language.')
     if not editable_languages or any(language not in languages for language in editable_languages):
         raise ValueError('Campaign editable_languages must be a non-empty subset of languages.')
 

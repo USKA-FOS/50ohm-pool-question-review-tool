@@ -451,6 +451,12 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(main.select_languages(manifest, "de", "de"), ("de", "de"))
         self.assertEqual(main.select_languages(manifest, "fr", "fr"), ("fr", "fr"))
         self.assertEqual(main.select_languages(manifest, "it", "it"), ("it", "it"))
+        monolingual_manifest = {
+            "languages": ["de"],
+            "editable_languages": ["de"],
+        }
+        self.assertEqual(main.select_languages(monolingual_manifest), ("de", "de"))
+        self.assertEqual(main.select_languages(monolingual_manifest, "de", "de"), ("de", "de"))
         restricted_manifest = {
             "languages": ["de", "fr", "it"],
             "editable_languages": ["fr", "it"],
