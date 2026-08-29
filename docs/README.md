@@ -20,6 +20,8 @@ changed text, appends an optional comment, and approves the active language;
 and controlled apply tools in `50ohm-question-pool`.
 
 One deployment can expose several configured campaign branches under
-`/campaign/<campaign-id>/`. `CAMPAIGNS_JSON` defines the public identifiers,
-branches, and labels; `DEFAULT_CAMPAIGN` controls the root redirect. All routes
-share one GitHub OAuth callback.
+`/campaign/<campaign-id>/`. Prefer a mounted multi-line `campaigns.json` file
+selected through `CAMPAIGNS_FILE`; `CAMPAIGNS_JSON` remains a compatibility
+fallback. The configuration defines public identifiers, branches, and labels;
+`DEFAULT_CAMPAIGN` controls the root redirect. All routes share one GitHub
+OAuth callback.

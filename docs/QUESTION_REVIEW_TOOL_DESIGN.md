@@ -28,7 +28,10 @@ working memory. The application itself has no business database.
 ## Campaign model
 
 One deployment serves one or more named campaign branches through
-`GITHUB_OWNER`, `GITHUB_REPO`, `CAMPAIGNS_JSON`, and `DEFAULT_CAMPAIGN`.
+`GITHUB_OWNER`, `GITHUB_REPO`, `CAMPAIGNS_FILE`, and `DEFAULT_CAMPAIGN`.
+`CAMPAIGNS_FILE` points to a mounted, non-secret JSON map. The older inline
+`CAMPAIGNS_JSON` and single-branch `CAMPAIGN_BRANCH` settings remain fallback
+interfaces.
 Each campaign is exposed under `/campaign/<campaign-id>/`. A branch contains:
 
 - `campaign.meta.json`, including immutable canonical provenance, scope,
@@ -85,6 +88,12 @@ reviewer authenticates and is used for the post-login redirect.
 The overview derives structure from the generated navigation index but derives
 progress from current `question.meta.json` files. Export-time statuses are not
 used as live state.
+
+The current table-of-contents parser requires generated navigation to contain
+three levels before questions: chapter, section, and subsection. The campaign
+loader validates this structure and exact index coverage before constructing
+the navigation tree. This is a current compatibility constraint of the review
+tool, including for monolingual and explicit-list campaigns.
 
 The reviewer can independently choose:
 
@@ -162,7 +171,7 @@ canonical question content and metadata.
 
 ## Limitations
 
-- Campaigns must be declared in `CAMPAIGNS_JSON`; the interface does not
+- Campaigns must be declared in the configured campaign map; the interface does not
   discover arbitrary repository branches or offer an unrestricted branch
   selector.
 - The in-memory cache is process-local. Multiple application instances each

@@ -1,0 +1,4 @@
+services:
+  question-review:
+    volumes:
+      - ./campaigns.json:/app/config/campaigns.json:ro

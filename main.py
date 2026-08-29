@@ -35,6 +35,7 @@ OWNER = os.getenv('GITHUB_OWNER')
 REPO = os.getenv('GITHUB_REPO')
 CAMPAIGN_BRANCH = os.getenv('CAMPAIGN_BRANCH')
 CAMPAIGNS_JSON = os.getenv('CAMPAIGNS_JSON')
+CAMPAIGNS_FILE = os.getenv('CAMPAIGNS_FILE')
 DEFAULT_CAMPAIGN = os.getenv('DEFAULT_CAMPAIGN', 'default')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
 SESSION_SECRET = os.getenv('SESSION_SECRET')
@@ -72,18 +73,26 @@ if missing_config:
     raise RuntimeError(f"Missing required configuration: {', '.join(missing_config)}")
 
 
-def load_campaign_configs(raw_json, legacy_branch, default_campaign):
+def load_campaign_configs(raw_json, legacy_branch, default_campaign, config_file=None):
+    source_name = 'CAMPAIGNS_JSON'
+    if config_file:
+        source_name = f'CAMPAIGNS_FILE ({config_file})'
+        try:
+            raw_json = Path(config_file).read_text(encoding='utf-8')
+        except OSError as exc:
+            raise RuntimeError(f'Unable to read {source_name}: {exc}') from exc
+
     if raw_json:
         try:
             raw_configs = json.loads(raw_json)
         except json.JSONDecodeError as exc:
-            raise RuntimeError('CAMPAIGNS_JSON must be valid JSON.') from exc
+            raise RuntimeError(f'{source_name} must contain valid JSON.') from exc
         if not isinstance(raw_configs, dict) or not raw_configs:
-            raise RuntimeError('CAMPAIGNS_JSON must be a non-empty JSON object.')
+            raise RuntimeError(f'{source_name} must contain a non-empty JSON object.')
     elif legacy_branch:
         raw_configs = {default_campaign: {'branch': legacy_branch, 'label': default_campaign}}
     else:
-        raise RuntimeError('Set CAMPAIGNS_JSON or CAMPAIGN_BRANCH.')
+        raise RuntimeError('Set CAMPAIGNS_FILE, CAMPAIGNS_JSON, or CAMPAIGN_BRANCH.')
 
     configs = {}
     for campaign_id, raw_config in raw_configs.items():
@@ -105,7 +114,12 @@ def load_campaign_configs(raw_json, legacy_branch, default_campaign):
     return configs
 
 
-CAMPAIGNS = load_campaign_configs(CAMPAIGNS_JSON, CAMPAIGN_BRANCH, DEFAULT_CAMPAIGN)
+CAMPAIGNS = load_campaign_configs(
+    CAMPAIGNS_JSON,
+    CAMPAIGN_BRANCH,
+    DEFAULT_CAMPAIGN,
+    CAMPAIGNS_FILE,
+)
 
 
 def campaign_config(campaign_id):
@@ -811,6 +825,61 @@ def select_languages(manifest, requested_reference=None, requested_review=None):
     return reference_language, review_language
 
 
+def validate_campaign_navigation(navigation, navigation_index, manifest):
+    error = (
+        'Campaign navigation must contain non-empty chapter, section, '
+        'subsection, and question levels.'
+    )
+    if not isinstance(navigation, dict) or not isinstance(navigation.get('sections'), list):
+        raise ValueError(error)
+
+    navigation_numbers = []
+    chapters = navigation['sections']
+    if not chapters:
+        raise ValueError(error)
+    for chapter in chapters:
+        sections = chapter.get('sections') if isinstance(chapter, dict) else None
+        if not isinstance(sections, list) or not sections:
+            raise ValueError(error)
+        for section in sections:
+            subsections = section.get('sections') if isinstance(section, dict) else None
+            if not isinstance(subsections, list) or not subsections:
+                raise ValueError(error)
+            for subsection in subsections:
+                questions = subsection.get('questions') if isinstance(subsection, dict) else None
+                if not isinstance(questions, list) or not questions:
+                    raise ValueError(error)
+                for question in questions:
+                    number = question.get('number') if isinstance(question, dict) else None
+                    if not isinstance(number, str) or not number:
+                        raise ValueError(error)
+                    navigation_numbers.append(number)
+
+    if len(set(navigation_numbers)) != len(navigation_numbers):
+        raise ValueError('Campaign navigation contains duplicate question numbers.')
+    items = navigation_index.get('items') if isinstance(navigation_index, dict) else None
+    if not isinstance(items, list):
+        raise ValueError('Campaign navigation index must contain an items array.')
+    index_numbers = [item.get('internal_code') for item in items if isinstance(item, dict)]
+    index_question_ids = [item.get('question_id') for item in items if isinstance(item, dict)]
+    if (
+        len(index_numbers) != len(items)
+        or any(not isinstance(number, str) or not number for number in index_numbers)
+        or len(set(index_numbers)) != len(index_numbers)
+        or set(index_numbers) != set(navigation_numbers)
+    ):
+        raise ValueError('Campaign navigation index does not match the localized navigation catalog.')
+    manifest_question_ids = manifest.get('question_ids')
+    if (
+        not isinstance(manifest_question_ids, list)
+        or len(index_question_ids) != len(items)
+        or any(not isinstance(question_id, str) or not question_id for question_id in index_question_ids)
+        or len(set(index_question_ids)) != len(index_question_ids)
+        or set(index_question_ids) != set(manifest_question_ids)
+    ):
+        raise ValueError('Campaign navigation index does not match campaign question_ids.')
+
+
 def load_campaign(campaign_id, token, requested_reference=None, requested_review=None, manifest=None):
     branch = campaign_branch(campaign_id)
     if manifest is None:
@@ -828,13 +897,14 @@ def load_campaign(campaign_id, token, requested_reference=None, requested_review
         f'derived/question_pool_ch-{reference_language}.json',
         token,
     )['json']
-    campaign_toc = toc(navigation)
     navigation_index = fetch_path(
         campaign_id,
         branch,
         'derived/navigation.index.json',
         token,
     )['json']
+    validate_campaign_navigation(navigation, navigation_index, manifest)
+    campaign_toc = toc(navigation)
     questions_by_number = {}
     for item in navigation_index['items']:
         question_id = item['question_id']

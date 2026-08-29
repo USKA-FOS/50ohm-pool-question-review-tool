@@ -1,4 +1,6 @@
 import os
+from pathlib import Path
+import tempfile
 import unittest
 from types import SimpleNamespace
 from unittest.mock import patch
@@ -30,6 +32,35 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(configs["antennas"]["branch"], "campaign/antennas")
         with self.assertRaisesRegex(RuntimeError, "DEFAULT_CAMPAIGN"):
             main.load_campaign_configs('{"receiver":"campaign/receiver"}', None, "missing")
+
+    def test_campaign_configuration_file_overrides_inline_json(self) -> None:
+        with tempfile.TemporaryDirectory() as temporary:
+            path = Path(temporary) / "campaigns.json"
+            path.write_text(
+                '{"german-cleanup":{"branch":"campaign/german-cleanup",'
+                '"label":"German cleanup"}}',
+                encoding="utf-8",
+            )
+            configs = main.load_campaign_configs(
+                '{"ignored":"campaign/ignored"}',
+                None,
+                "german-cleanup",
+                path,
+            )
+
+        self.assertEqual(
+            configs,
+            {
+                "german-cleanup": {
+                    "branch": "campaign/german-cleanup",
+                    "label": "German cleanup",
+                }
+            },
+        )
+
+    def test_campaign_configuration_file_reports_missing_file(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "Unable to read CAMPAIGNS_FILE"):
+            main.load_campaign_configs(None, None, "default", "/missing/campaigns.json")
 
     def test_campaign_snapshots_are_isolated_by_campaign(self) -> None:
         configs = {
@@ -349,6 +380,11 @@ class CampaignBackendTests(unittest.TestCase):
             "campaign_branch": "campaign/test",
             "languages": ["de", "fr"],
             "editable_languages": ["fr"],
+            "question_ids": [
+                "q_111111111111",
+                "q_222222222222",
+                "q_333333333333",
+            ],
         }
         navigation = {
             "sections": [
@@ -439,6 +475,50 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(campaign_toc.prev_q_in_section("NF201"), "NF101")
         self.assertIsNone(campaign_toc.prev_q_in_section("NF101"))
         self.assertIsNone(campaign_toc.next_q_in_section("NF201"))
+
+    def test_campaign_navigation_requires_three_levels_and_complete_index(self) -> None:
+        manifest = {"question_ids": ["q_111111111111"]}
+        index = {
+            "items": [
+                {
+                    "question_id": "q_111111111111",
+                    "internal_code": "NF101",
+                }
+            ]
+        }
+        shallow_navigation = {
+            "sections": [
+                {
+                    "title": "Campaign",
+                    "questions": [{"number": "NF101"}],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "chapter, section, subsection"):
+            main.validate_campaign_navigation(shallow_navigation, index, manifest)
+
+        valid_navigation = {
+            "sections": [
+                {
+                    "title": "Campaign",
+                    "sections": [
+                        {
+                            "title": "Review",
+                            "sections": [
+                                {
+                                    "title": "Selected questions",
+                                    "questions": [{"number": "NF101"}],
+                                }
+                            ],
+                        }
+                    ],
+                }
+            ]
+        }
+        main.validate_campaign_navigation(valid_navigation, index, manifest)
+        wrong_index = {"items": [{"question_id": "q_111111111111", "internal_code": "NF102"}]}
+        with self.assertRaisesRegex(ValueError, "does not match the localized"):
+            main.validate_campaign_navigation(valid_navigation, wrong_index, manifest)
 
     def test_language_selection_allows_same_language_review(self) -> None:
         manifest = {

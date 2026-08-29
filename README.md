@@ -38,9 +38,10 @@ docker run --rm --detach \
   --name 50ohm-question-review-local \
   --publish 127.0.0.1:8080:8080 \
   --env-file ~/.config/50ohm-review-tool/local.env \
+  --mount type=bind,src="$PWD/campaigns.json",dst=/app/config/campaigns.json,readonly \
   --env GITHUB_OWNER=isqsoft \
   --env GITHUB_REPO=50ohm-question-review-campaigns \
-  --env 'CAMPAIGNS_JSON={"receiver-signals":{"branch":"campaign/multilingual-empfaenger-sinus-signals-example","label":"Receiver and sinusoidal signals"}}' \
+  --env CAMPAIGNS_FILE=/app/config/campaigns.json \
   --env DEFAULT_CAMPAIGN=receiver-signals \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
@@ -53,22 +54,27 @@ The server redirects `http://localhost:8080` to the default campaign at
 `http://localhost:8080/campaign/receiver-signals/`. Its health endpoint is
 `http://localhost:8080/healthz`.
 
-`CAMPAIGNS_JSON` maps stable URL identifiers to Git branches and optional
-display labels. For example:
+`CAMPAIGNS_FILE` is the preferred campaign configuration. It points to a JSON
+file mapping stable URL identifiers to Git branches and optional display
+labels. Start from the tracked examples:
 
-```dotenv
-CAMPAIGNS_JSON={"receiver-signals":{"branch":"campaign/receiver-signals","label":"Receiver signals"},"antennas":{"branch":"campaign/antennas","label":"Antenna terminology"}}
-DEFAULT_CAMPAIGN=receiver-signals
+```bash
+cp campaigns.example.json campaigns.json
+cp docker-compose.override.example.yml docker-compose.override.yml
 ```
 
-Reviewers receive the relevant campaign URL. All campaigns share the same
-GitHub OAuth callback and application process. `CAMPAIGN_BRANCH` remains a
-supported single-campaign compatibility setting when `CAMPAIGNS_JSON` is not
-defined.
+Keep `CAMPAIGNS_FILE=/app/config/campaigns.json` and the selected
+`DEFAULT_CAMPAIGN` in `.env`. Docker Compose automatically reads the local
+override and mounts `campaigns.json` read-only. Neither local file is tracked.
+`CAMPAIGNS_JSON` remains a compatible one-line fallback; `CAMPAIGN_BRANCH`
+remains the legacy single-campaign fallback. When `CAMPAIGNS_FILE` is set, it
+takes precedence over both.
 
-Changing only the campaign map does not require rebuilding the Docker image.
-Update the private environment file and recreate the container so Docker
-injects the new values:
+Reviewers receive the relevant campaign URL. All campaigns share the same
+GitHub OAuth callback and application process.
+
+Changing only `campaigns.json` does not require rebuilding the Docker image.
+Recreate the container so the application reloads the mounted file:
 
 ```bash
 docker compose up -d --no-deps --force-recreate question-review

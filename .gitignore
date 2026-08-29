@@ -1,4 +1,6 @@
 .env
+campaigns.json
+docker-compose.override.yml
 .work/
 .venv/
 __pycache__/

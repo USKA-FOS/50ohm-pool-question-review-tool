@@ -103,15 +103,18 @@ GITHUB_OWNER=USKA-FOS
 GITHUB_REPO=50ohm-question-review-campaigns
 ```
 
-Conserver le callback, les secrets et la table de campagnes. Exemple :
+Conserver le callback et les secrets. La table de campagnes se trouve de
+préférence dans le fichier monté `campaigns.json`; le `.env` contient :
 
 ```dotenv
-CAMPAIGNS_JSON={"receiver-signals":{"branch":"campaign/multilingual-empfaenger-sinus-signals-example","label":"Receiver and sinusoidal signals"},"antennas":{"branch":"campaign/antennas","label":"Antennas"}}
+CAMPAIGNS_FILE=/app/config/campaigns.json
 DEFAULT_CAMPAIGN=receiver-signals
 ```
 
-La modification de ces variables ne necessite pas de reconstruire l'image.
-Recreer seulement le conteneur afin de relire `.env` :
+Copier `docker-compose.override.example.yml` vers
+`docker-compose.override.yml` pour monter ce fichier en lecture seule. La
+modification de la table ou de ces variables ne nécessite pas de reconstruire
+l'image. Recréer seulement le conteneur :
 
 ```bash
 docker compose up -d --no-deps --force-recreate question-review
@@ -184,4 +187,3 @@ Le transfert est termine seulement lorsque :
 - le serveur charge `GITHUB_OWNER=USKA-FOS` ;
 - les deux campagnes s'affichent et acceptent une ecriture controlee ;
 - les clones et la documentation operationnelle utilisent la nouvelle URL.
-

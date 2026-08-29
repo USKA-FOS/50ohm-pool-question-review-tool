@@ -1,0 +1,14 @@
+{
+  "receiver-signals": {
+    "branch": "campaign/multilingual-empfaenger-sinus-signals-example",
+    "label": "Receiver and sinusoidal signals"
+  },
+  "antennas": {
+    "branch": "campaign/antennas",
+    "label": "Antennas"
+  },
+  "revision-2-5-cleanup-frv-ypa": {
+    "branch": "campaign/Revision_2.5_Cleanup_FRV_YPA",
+    "label": "Revision 2.5 Cleanup FRV YPA"
+  }
+}

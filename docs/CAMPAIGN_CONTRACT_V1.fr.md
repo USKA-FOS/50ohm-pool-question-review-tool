@@ -21,8 +21,7 @@ campaign.meta.json
 media.refs.json
 derived/
   navigation.index.json
-  question_pool_ch-de.json
-  question_pool_ch-fr.json
+  question_pool_ch-<langue>.json
 pool/
   questions/
     <question_id>/
@@ -34,15 +33,23 @@ reviews/
   <question_id>.json       # absent tant qu'aucun commentaire n'existe
 ```
 
-Le répertoire `derived/` contient uniquement des index de navigation générés
-depuis le canonical lors de l'export. Les catalogues localisés conservent la
-hiérarchie des chapitres sélectionnés dans le format attendu par la table des
-matières du prototype. `navigation.index.json` relie le `number` affiché au
-`question_id` canonique et fournit les statuts de révision sans imposer une
-requête GitHub par question.
+Le répertoire `derived/` contient obligatoirement les index de navigation
+générés depuis le canonical lors de l'export. Chaque langue déclarée dans
+`languages` doit avoir exactement un catalogue
+`question_pool_ch-<langue>.json`. Sa structure contient toujours trois niveaux
+non vides avant les questions : `chapter.sections`, `section.sections`, puis
+`subsection.questions`. Cette structure reste obligatoire même pour une
+campagne monolingue ou une simple liste explicite de questions ; l'exporteur
+crée alors les niveaux synthétiques nécessaires.
+
+`navigation.index.json` relie chaque `number` affiché au `question_id`
+canonique. Ses codes doivent couvrir exactement les questions des catalogues
+localisés, sans doublon, et ses `question_id` doivent couvrir exactement
+`campaign.meta.json.question_ids`.
 
 Ces fichiers ne sont jamais modifiés par les réviseurs et ne sont pas importés
-dans le canonical. Toute campagne exportée par chapitres doit les régénérer.
+dans le canonical. Toute campagne, quel que soit son filtre de sélection, doit
+les régénérer.
 
 Les quatre fichiers placés sous `pool/questions/<question_id>/` gardent
 exactement le schéma du canonical. Aucun champ propre à l'outil de révision
