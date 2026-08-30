@@ -344,6 +344,84 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(updated["picture_question_url"], 101)
         self.assertEqual(content["question"], "Domanda?")
 
+    def test_metadata_edits_are_limited_and_structured(self) -> None:
+        meta = {
+            "id": "q_111111111111",
+            "class_level": 0,
+            "review": {"de": "to_be_reviewed"},
+            "HB": {"rationale": ["Old"], "motivation": "Old law"},
+            "external_refs": [{"provider": "DARC"}],
+        }
+
+        updated = main.metadata_with_edits(
+            meta,
+            "q_111111111111",
+            ["/class_level", "/HB/rationale", "/HB/motivation"],
+            {
+                "/class_level": "1",
+                "/HB/rationale": [" First ", "", "Second"],
+                "/HB/motivation": " ",
+            },
+        )
+
+        self.assertEqual(updated["class_level"], 1)
+        self.assertEqual(updated["HB"], {"rationale": ["First", "Second"]})
+        self.assertEqual(updated["external_refs"], [{"provider": "DARC"}])
+        self.assertEqual(meta["HB"]["motivation"], "Old law")
+
+    def test_picture_edit_uses_only_media_from_campaign_manifest(self) -> None:
+        content = {
+            "question_id": "q_111111111111",
+            "language": "de",
+            "question": "Frage?",
+            "answer_a": "A",
+            "answer_b": "B",
+            "answer_c": "C",
+            "answer_d": "D",
+            "picture_question_url": None,
+            "picture_answer_a_url": None,
+            "picture_answer_b_url": None,
+            "picture_answer_c_url": None,
+            "picture_answer_d_url": None,
+        }
+        manifest = {
+            "schema_version": 1,
+            "repository": "USKA-FOS/50ohm-contents-ch",
+            "revision": "a" * 40,
+            "items": {
+                "202": {
+                    "variants": {
+                        "de": {
+                            "path": "canonical/drawings/dr_example/202.de.svg",
+                            "media_type": "image/svg+xml",
+                        }
+                    }
+                }
+            },
+        }
+
+        updated = main.content_with_edits(
+            content,
+            "q_111111111111",
+            "de",
+            {field: content[field] for field in ("question", "answer_a", "answer_b", "answer_c", "answer_d")},
+            editable_picture_fields=["picture_question_url"],
+            picture_values={"picture_question_url": "202"},
+            media_manifest=manifest,
+        )
+
+        self.assertEqual(updated["picture_question_url"], 202)
+        with self.assertRaisesRegex(ValueError, "outside media.refs.json"):
+            main.content_with_edits(
+                content,
+                "q_111111111111",
+                "de",
+                {field: content[field] for field in ("question", "answer_a", "answer_b", "answer_c", "answer_d")},
+                editable_picture_fields=["picture_question_url"],
+                picture_values={"picture_question_url": "999"},
+                media_manifest=manifest,
+            )
+
     def test_media_urls_use_the_immutable_campaign_manifest(self) -> None:
         manifest = {
             "schema_version": 1,
@@ -634,8 +712,16 @@ class CampaignBackendTests(unittest.TestCase):
         editor_context = {
             "request": request,
             "key": "NF101",
+            "question_id": "q_111111111111",
             "reference": question,
             "review": question,
+            "review_content": {
+                "picture_question_url": None,
+                "picture_answer_a_url": None,
+                "picture_answer_b_url": 202,
+                "picture_answer_c_url": None,
+                "picture_answer_d_url": None,
+            },
             "reference_media": {
                 "picture_question": None,
                 "picture_a": None,
@@ -660,6 +746,28 @@ class CampaignBackendTests(unittest.TestCase):
             "review_status_author": "reviewer",
             "comments_sha": "",
             "comments": [],
+            "question_meta": {
+                "class_level": 1,
+                "HB": {"rationale": ["Terminology corrected."]},
+            },
+            "rationales": ["Terminology corrected."],
+            "editable_metadata_fields": ["/class_level", "/HB/rationale"],
+            "editable_picture_fields": ["picture_answer_b_url"],
+            "details_enabled": True,
+            "picture_field_labels": main.PICTURE_FIELD_LABELS,
+            "picture_options": [
+                {
+                    "id": 202,
+                    "url": "https://raw.githubusercontent.com/example/media/revision/202.fr.svg",
+                }
+            ],
+            "review_picture_urls": {
+                "picture_question_url": None,
+                "picture_answer_a_url": None,
+                "picture_answer_b_url": "https://raw.githubusercontent.com/example/media/revision/202.fr.svg",
+                "picture_answer_c_url": None,
+                "picture_answer_d_url": None,
+            },
             "reference_language": "de",
             "review_language": "fr",
             "reference_language_label": "German",
@@ -691,15 +799,28 @@ class CampaignBackendTests(unittest.TestCase):
         )
         self.assertIn("Campaign overview", editor_html)
         self.assertIn('value="commit">Commit</button>', editor_html)
+        self.assertIn("q_111111111111", editor_html)
+        self.assertIn('data-copy-target="canonical-question-id"', editor_html)
+        self.assertIn('data-review-tab="metadata-panel"', editor_html)
+        self.assertIn('name="metadata_class_level"', editor_html)
+        self.assertIn('name="picture_answer_b_url"', editor_html)
+        self.assertIn("Current rationale", editor_html)
         self.assertNotIn("Add comment", editor_html)
         self.assertIn('<div class="col-lg-8">\n            <h4>Edit Answers:</h4>', editor_html)
         self.assertIn('class="answer-edit-row d-flex align-items-start gap-2 mb-2"', editor_html)
         self.assertIn('for="answer-a">A</label>', editor_html)
         self.assertIn(
-            'name="answer_a" class="form-control answer-textarea flex-grow-1" rows="2"',
+            'name="answer_a" class="form-control answer-textarea auto-size-textarea flex-grow-1" rows="1"',
             editor_html,
         )
-        self.assertIn('name="comment" class="form-control" rows="3"', editor_html)
+        self.assertIn(
+            'name="comment" class="form-control auto-size-textarea" rows="1"',
+            editor_html,
+        )
+        self.assertIn(
+            'name="metadata_rationale" class="form-control auto-size-textarea" rows="1"',
+            editor_html,
+        )
         layout_html = main.templates.get_template("layout.html").render(request=request)
         self.assertIn(f'/static/style.css?v={main.STATIC_VERSION}', layout_html)
         self.assertIn("Please wait. Working with GitHub...", layout_html)
@@ -710,9 +831,12 @@ class CampaignBackendTests(unittest.TestCase):
         editor_context["review_status"] = "approved"
         approved_html = editor_template.render(**editor_context)
         self.assertIn('value="reopen">Reopen</button>', approved_html)
-        self.assertIn('name="question" class="form-control" rows="10" disabled', approved_html)
         self.assertIn(
-            'name="answer_a" class="form-control answer-textarea flex-grow-1" rows="2" disabled',
+            'name="question" class="form-control auto-size-textarea" rows="1" disabled',
+            approved_html,
+        )
+        self.assertIn(
+            'name="answer_a" class="form-control answer-textarea auto-size-textarea flex-grow-1" rows="1" disabled',
             approved_html,
         )
 
@@ -796,6 +920,102 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertEqual(message, "Commit NF101 fr review")
         self.assertEqual(expected_head, "branch-head")
         self.assertEqual(token, "test-token")
+
+    def test_commit_atomically_updates_authorized_metadata_and_picture(self) -> None:
+        request = SimpleNamespace(
+            session={"token": "test-token", "username": "reviewer"},
+            query_params={"reference_language": "de", "review_language": "de"},
+        )
+        manifest = {
+            "editable_metadata_fields": ["/class_level", "/HB/rationale"],
+            "editable_picture_fields": ["picture_question_url"],
+        }
+        meta = {
+            "id": "q_111111111111",
+            "class_level": 0,
+            "review": {"de": "to_be_reviewed"},
+            "HB": {"rationale": ["Old"]},
+        }
+        content = {
+            "question_id": "q_111111111111",
+            "language": "de",
+            "question": "Frage?",
+            "answer_a": "A",
+            "answer_b": "B",
+            "answer_c": "C",
+            "answer_d": "D",
+            "picture_question_url": None,
+            "picture_answer_a_url": None,
+            "picture_answer_b_url": None,
+            "picture_answer_c_url": None,
+            "picture_answer_d_url": None,
+        }
+        media = {
+            "schema_version": 1,
+            "repository": "USKA-FOS/50ohm-contents-ch",
+            "revision": "a" * 40,
+            "items": {
+                "202": {
+                    "variants": {
+                        "de": {
+                            "path": "canonical/drawings/dr_example/202.de.svg",
+                            "media_type": "image/svg+xml",
+                        }
+                    }
+                }
+            },
+        }
+
+        def fetch(campaign_id, ref, path, token):
+            values = {
+                "pool/questions/q_111111111111/question.meta.json": {"sha": "meta-sha", "json": meta},
+                "pool/questions/q_111111111111/question.de.json": {"sha": "content-sha", "json": content},
+                "media.refs.json": {"sha": "media-sha", "json": media},
+            }
+            return values[path]
+
+        with (
+            patch.object(
+                main,
+                "load_campaign",
+                return_value=(
+                    manifest,
+                    None,
+                    {"NF101": {"question_id": "q_111111111111"}},
+                    "de",
+                    "de",
+                ),
+            ),
+            patch.object(main, "fetch_path", side_effect=fetch),
+            patch.object(main, "ensure_campaign_snapshot", return_value={"head_sha": "branch-head"}),
+            patch.object(main, "commit_campaign_files", return_value="new-head") as commit_files,
+        ):
+            response = main.save_question(
+                request=request,
+                campaign_id="default",
+                key="NF101",
+                sha="content-sha",
+                meta_sha="meta-sha",
+                comments_sha="",
+                action="commit",
+                question="Frage?",
+                answer_a="A",
+                answer_b="B",
+                answer_c="C",
+                answer_d="D",
+                metadata_class_level="1",
+                metadata_rationale=["Reviewed"],
+                picture_question_url="202",
+                comment=None,
+            )
+
+        self.assertEqual(response.status_code, 303)
+        changes = commit_files.call_args.args[1]
+        self.assertEqual(changes["pool/questions/q_111111111111/question.de.json"]["picture_question_url"], 202)
+        updated_meta = changes["pool/questions/q_111111111111/question.meta.json"]
+        self.assertEqual(updated_meta["class_level"], 1)
+        self.assertEqual(updated_meta["HB"]["rationale"], ["Reviewed"])
+        self.assertEqual(updated_meta["review"]["de"], "approved")
 
     def test_reopen_changes_only_status(self) -> None:
         request = SimpleNamespace(

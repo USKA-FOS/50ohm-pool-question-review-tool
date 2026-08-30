@@ -111,10 +111,22 @@ The editor displays:
 - the selected reference-language text;
 - current review status and Git-derived author;
 - existing comments and their Git-derived authors;
+- the canonical `question_id` beside the visible question number, with a copy
+  action;
 - an editable question field occupying one desktop column;
-- full-width two-line answer text areas occupying the other two columns, with
-  A-D labels beside the fields and vertical resize handles;
+- full-width answer text areas occupying the other two columns, initially one
+  line high before content fitting, with A-D labels beside the fields and
+  vertical resize handles;
+- initial textarea heights fitted to displayed content, with automatic growth
+  and retained manual vertical resizing;
 - an optional comment field and ordered navigation controls.
+
+When a campaign declares `editable_metadata_fields` or
+`editable_picture_fields`, the form adds conditional `Content` and `Metadata`
+tabs. Metadata uses fixed structured widgets for the supported canonical paths.
+Picture selectors expose only media already resolved in `media.refs.json` and
+show the selected preview. Existing `HB.rationale` entries are also shown as
+read-only review context when metadata editing is enabled.
 
 `null` and empty strings remain distinct. Image-backed `null` fields are not
 turned into editable empty text.
@@ -123,8 +135,9 @@ turned into editable empty text.
 
 The interface exposes two workflow actions:
 
-- `Commit` saves changed active-language content, appends an optional comment,
-  and sets `review.<language>` to `approved`;
+- `Commit` saves changed active-language content, authorized metadata and
+  picture references, appends an optional comment, and sets
+  `review.<language>` to `approved`;
 - `Reopen` changes only that status to `to_be_reviewed`.
 
 All files belonging to one action are written in a single GraphQL
@@ -149,6 +162,8 @@ operator-controlled process in `50ohm-question-pool`:
 6. commit and push the complete canonical change.
 
 Only approved, valid, non-conflicting question/language pairs are imported.
+Localized picture references follow their language pair. Shared metadata is
+merged once per question and only for explicitly authorized changed paths.
 Campaign comments and generated navigation are never canonical input. Import
 reports may snapshot the comments for traceability while keeping them outside
 canonical question content and metadata.

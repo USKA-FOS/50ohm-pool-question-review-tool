@@ -155,6 +155,14 @@ question data under `reviews/<question_id>.json`. They are submitted with
 `Commit`, and the displayed author is derived from the commit that introduced
 the comment.
 
+Campaigns may optionally authorize structured detail editing through
+`editable_metadata_fields` and `editable_picture_fields`. The editor then adds
+conditional `Content` and `Metadata` tabs. Supported metadata paths use fixed
+widgets; picture choices are limited to entries already resolved in
+`media.refs.json`. The visible question number is accompanied by its copyable
+canonical `question_id`, and editable question and answer fields fit their
+initial content while remaining vertically resizable.
+
 Forms and internal navigation display a blocking
 `Please wait. Working with GitHub...` indicator while the synchronous GitHub
 operation is running. It is reset on both normal page loads and browser page

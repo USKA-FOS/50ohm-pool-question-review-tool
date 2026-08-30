@@ -48,6 +48,26 @@ LANGUAGE_LABELS = {
     'it': 'Italian',
 }
 REVIEW_STATUSES = ('to_be_reviewed', 'approved')
+EDITABLE_METADATA_FIELDS = (
+    '/class_level',
+    '/HB/rationale',
+    '/HB/motivation',
+)
+PICTURE_FIELDS = (
+    'picture_question_url',
+    'picture_answer_a_url',
+    'picture_answer_b_url',
+    'picture_answer_c_url',
+    'picture_answer_d_url',
+)
+PICTURE_FIELD_LABELS = {
+    'picture_question_url': 'Question illustration',
+    'picture_answer_a_url': 'Answer A illustration',
+    'picture_answer_b_url': 'Answer B illustration',
+    'picture_answer_c_url': 'Answer C illustration',
+    'picture_answer_d_url': 'Answer D illustration',
+}
+VALID_CLASS_LEVELS = (0, 1, 9)
 PREFERENCE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 REFERENCE_LANGUAGE_COOKIE = '50ohm_reference_language'
 REVIEW_LANGUAGE_COOKIE = '50ohm_review_language'
@@ -736,7 +756,74 @@ def question_media_urls(question, language, media_manifest):
     }
 
 
-def content_with_edits(content, question_id, language, values):
+def editable_field_list(manifest, name, supported):
+    values = manifest.get(name, [])
+    if not isinstance(values, list) or any(not isinstance(value, str) for value in values):
+        raise ValueError(f'Campaign {name} must be an array of strings.')
+    if len(set(values)) != len(values):
+        raise ValueError(f'Campaign {name} contains duplicates.')
+    unknown = [value for value in values if value not in supported]
+    if unknown:
+        raise ValueError(f'Campaign {name} contains unsupported fields: {", ".join(unknown)}')
+    return list(values)
+
+
+def media_options(media_manifest, language):
+    items = media_manifest.get('items', {})
+    if not isinstance(items, dict):
+        raise ValueError('Campaign media manifest has an invalid items object.')
+    options = []
+    for raw_id in items:
+        if not str(raw_id).isdigit() or int(raw_id) <= 0:
+            raise ValueError(f'Campaign media manifest has an invalid media id: {raw_id!r}.')
+        media_id = int(raw_id)
+        options.append({'id': media_id, 'url': media_url(media_manifest, media_id, language)})
+    return sorted(options, key=lambda item: item['id'])
+
+
+def metadata_with_edits(meta, question_id, editable_fields, values):
+    if meta.get('id') != question_id:
+        raise ValueError('Question metadata id does not match its directory.')
+    result = dict(meta)
+    if '/class_level' in editable_fields:
+        raw_class_level = values.get('/class_level')
+        try:
+            class_level = int(raw_class_level)
+        except (TypeError, ValueError) as exc:
+            raise ValueError('class_level must be 0, 1, or 9.') from exc
+        if class_level not in VALID_CLASS_LEVELS:
+            raise ValueError('class_level must be 0, 1, or 9.')
+        result['class_level'] = class_level
+
+    hb = dict(result.get('HB', {}))
+    if '/HB/rationale' in editable_fields:
+        rationale = [item.strip() for item in (values.get('/HB/rationale') or []) if item.strip()]
+        if rationale:
+            hb['rationale'] = rationale
+        else:
+            hb.pop('rationale', None)
+    if '/HB/motivation' in editable_fields:
+        motivation = (values.get('/HB/motivation') or '').strip()
+        if motivation:
+            hb['motivation'] = motivation
+        else:
+            hb.pop('motivation', None)
+    if hb:
+        result['HB'] = hb
+    else:
+        result.pop('HB', None)
+    return result
+
+
+def content_with_edits(
+    content,
+    question_id,
+    language,
+    values,
+    editable_picture_fields=None,
+    picture_values=None,
+    media_manifest=None,
+):
     if content.get('question_id') != question_id:
         raise ValueError('Question content id does not match its directory.')
     if content.get('language') != language:
@@ -750,6 +837,8 @@ def content_with_edits(content, question_id, language, values):
             if submitted_value is not None:
                 raise ValueError(f'Nullable field {field} cannot be created by the editor.')
             result[field] = None
+        elif submitted_value is None and current_value == '':
+            result[field] = current_value
         elif submitted_value is None:
             raise ValueError(f'Missing editable field: {field}.')
         else:
@@ -757,6 +846,32 @@ def content_with_edits(content, question_id, language, values):
 
     if not result['question'].strip():
         raise ValueError('Question text cannot be empty.')
+
+    editable_picture_fields = editable_picture_fields or []
+    picture_values = picture_values or {}
+    available_media = media_manifest.get('items', {}) if isinstance(media_manifest, dict) else {}
+    for field in editable_picture_fields:
+        raw_value = picture_values.get(field)
+        if raw_value in (None, ''):
+            result[field] = None
+            continue
+        try:
+            media_id = int(raw_value)
+        except (TypeError, ValueError) as exc:
+            raise ValueError(f'{field} must contain a valid media id or be empty.') from exc
+        if media_id <= 0 or str(media_id) not in available_media:
+            raise ValueError(f'{field} references media outside media.refs.json: {media_id}.')
+        media_url(media_manifest, media_id, language)
+        result[field] = media_id
+
+    if editable_picture_fields:
+        for text_field, picture_field in zip(
+            ('question', 'answer_a', 'answer_b', 'answer_c', 'answer_d'),
+            PICTURE_FIELDS,
+            strict=True,
+        ):
+            if result.get(text_field) is None and result.get(picture_field) is None:
+                raise ValueError(f'{text_field} cannot be null without {picture_field}.')
     return result
 
 
@@ -886,6 +1001,8 @@ def load_campaign(campaign_id, token, requested_reference=None, requested_review
         manifest = fetch_path(campaign_id, branch, 'campaign.meta.json', token)['json']
     if manifest.get('campaign_branch') != branch:
         raise ValueError('Configured branch does not match campaign.meta.json.')
+    editable_field_list(manifest, 'editable_metadata_fields', EDITABLE_METADATA_FIELDS)
+    editable_field_list(manifest, 'editable_picture_fields', PICTURE_FIELDS)
     reference_language, review_language = select_languages(
         manifest,
         requested_reference,
@@ -1128,6 +1245,16 @@ def edit_question(request: Request, campaign_id: str, key: str):
         )
         data_original = fetch_original_question(campaign_id, manifest, question_id, review_language, token)
         media_manifest = fetch_path(campaign_id, branch, 'media.refs.json', token)['json']
+        editable_metadata_fields = editable_field_list(
+            manifest,
+            'editable_metadata_fields',
+            EDITABLE_METADATA_FIELDS,
+        )
+        editable_picture_fields = editable_field_list(
+            manifest,
+            'editable_picture_fields',
+            PICTURE_FIELDS,
+        )
         data_meta = fetch_path(
             campaign_id,
             branch,
@@ -1151,8 +1278,10 @@ def edit_question(request: Request, campaign_id: str, key: str):
         name='editor.html',
         context={
             'key': key,
+            'question_id': question_id,
             'reference': reference,
             'review': review,
+            'review_content': data_review['json'],
             'reference_media': reference_media,
             'review_media': review_media,
             'diff': word_diff(original, review),
@@ -1162,6 +1291,20 @@ def edit_question(request: Request, campaign_id: str, key: str):
             'review_status_author': review_status_author,
             'comments_sha': comments_sha or '',
             'comments': comments,
+            'question_meta': data_meta['json'],
+            'rationales': data_meta['json'].get('HB', {}).get('rationale') or [],
+            'editable_metadata_fields': editable_metadata_fields,
+            'editable_picture_fields': editable_picture_fields,
+            'details_enabled': bool(editable_metadata_fields or editable_picture_fields),
+            'picture_field_labels': PICTURE_FIELD_LABELS,
+            'picture_options': media_options(media_manifest, review_language),
+            'review_picture_urls': {
+                'picture_question_url': review_media['picture_question'],
+                'picture_answer_a_url': review_media['picture_a'],
+                'picture_answer_b_url': review_media['picture_b'],
+                'picture_answer_c_url': review_media['picture_c'],
+                'picture_answer_d_url': review_media['picture_d'],
+            },
             'reference_language': reference_language,
             'review_language': review_language,
             'reference_language_label': LANGUAGE_LABELS.get(reference_language, reference_language.upper()),
@@ -1192,6 +1335,14 @@ def save_question(
     answer_b: Optional[str] = Form(None),
     answer_c: Optional[str] = Form(None),
     answer_d: Optional[str] = Form(None),
+    metadata_class_level: Optional[str] = Form(None),
+    metadata_rationale: list[str] = Form([]),
+    metadata_motivation: Optional[str] = Form(None),
+    picture_question_url: Optional[str] = Form(None),
+    picture_answer_a_url: Optional[str] = Form(None),
+    picture_answer_b_url: Optional[str] = Form(None),
+    picture_answer_c_url: Optional[str] = Form(None),
+    picture_answer_d_url: Optional[str] = Form(None),
     comment: Optional[str] = Form(None),
 ):
     token = get_token(request)
@@ -1200,7 +1351,7 @@ def save_question(
     reference_language = request.query_params.get('reference_language')
     review_language = request.query_params.get('review_language')
     try:
-        _, _, questions_by_number, reference_language, review_language = load_campaign(
+        manifest, _, questions_by_number, reference_language, review_language = load_campaign(
             campaign_id,
             token,
             reference_language,
@@ -1238,6 +1389,22 @@ def save_question(
         if action != 'commit':
             raise ValueError(f'Unsupported review action: {action}.')
 
+        editable_metadata_fields = editable_field_list(
+            manifest,
+            'editable_metadata_fields',
+            EDITABLE_METADATA_FIELDS,
+        )
+        editable_picture_fields = editable_field_list(
+            manifest,
+            'editable_picture_fields',
+            PICTURE_FIELDS,
+        )
+        media_manifest = (
+            fetch_path(campaign_id, branch, 'media.refs.json', token)['json']
+            if editable_picture_fields
+            else {}
+        )
+
         content_path = f'pool/questions/{question_id}/question.{review_language}.json'
         current_content = fetch_path(campaign_id, branch, content_path, token)
         if current_content['sha'] != sha:
@@ -1256,6 +1423,15 @@ def save_question(
                 'answer_c': answer_c,
                 'answer_d': answer_d,
             },
+            editable_picture_fields=editable_picture_fields,
+            picture_values={
+                'picture_question_url': picture_question_url,
+                'picture_answer_a_url': picture_answer_a_url,
+                'picture_answer_b_url': picture_answer_b_url,
+                'picture_answer_c_url': picture_answer_c_url,
+                'picture_answer_d_url': picture_answer_d_url,
+            },
+            media_manifest=media_manifest,
         )
 
         comment_text = comment.strip() if comment else ''
@@ -1277,7 +1453,17 @@ def save_question(
             updated_comments = comment_with_append(current_comments, question_id, review_language, comment_text)
             changes[comments_path] = updated_comments
 
-        updated_meta = meta_with_status(current_meta['json'], question_id, review_language, 'approved')
+        updated_meta = metadata_with_edits(
+            current_meta['json'],
+            question_id,
+            editable_metadata_fields,
+            {
+                '/class_level': metadata_class_level,
+                '/HB/rationale': metadata_rationale,
+                '/HB/motivation': metadata_motivation,
+            },
+        )
+        updated_meta = meta_with_status(updated_meta, question_id, review_language, 'approved')
         if updated_meta != current_meta['json']:
             changes[meta_path] = updated_meta
         if changes:

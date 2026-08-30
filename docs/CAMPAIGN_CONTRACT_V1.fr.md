@@ -89,6 +89,8 @@ Exemple complet :
   },
   "languages": ["de", "fr", "it"],
   "editable_languages": ["fr"],
+  "editable_metadata_fields": ["/class_level", "/HB/rationale"],
+  "editable_picture_fields": ["picture_question_url"],
   "question_ids": [
     "q_111111111111",
     "q_222222222222"
@@ -118,6 +120,18 @@ Exemple complet :
 - `question_ids` : périmètre exhaustif autorisé de la campagne ;
 - `selection_reasons` : raisons informatives de la sélection, indexées par
   `question_id`.
+
+Champs facultatifs :
+
+- `editable_metadata_fields` : sous-ensemble ordonné des chemins JSON Pointer
+  `/class_level`, `/HB/rationale` et `/HB/motivation` ;
+- `editable_picture_fields` : sous-ensemble ordonné de
+  `picture_question_url` et `picture_answer_a_url` à
+  `picture_answer_d_url`.
+
+Un champ facultatif absent équivaut à une liste vide. Les doublons et valeurs
+inconnues rendent la campagne invalide. Ces listes sont des autorisations, pas
+des demandes de modification automatique.
 
 `source_ref` conserve le nom de la branche ou du tag fourni à l'exporteur. Il
 est informatif. Seul le commit `revision` est normatif.
@@ -264,10 +278,17 @@ Une sauvegarde peut modifier :
 
 - `question.<langue>.json` pour une langue modifiable ;
 - `review.<langue>` dans `question.meta.json` ;
+- les seuls chemins de `question.meta.json` déclarés dans
+  `editable_metadata_fields` ;
+- les seuls champs `picture_*` de la langue active déclarés dans
+  `editable_picture_fields` ;
 - le fichier facultatif `reviews/<question_id>.json`.
 
-Les identifiants, références externes, niveaux de classe, autres langues et
-autres statuts ne sont pas modifiables dans l'interface.
+Les identifiants, références externes, champs non autorisés, autres langues et
+autres statuts ne sont pas modifiables dans l'interface. Les métadonnées sont
+éditées avec des widgets structurés ; aucun éditeur JSON brut n'est fourni.
+Les références graphiques sont limitées aux médias déjà déclarés dans
+`media.refs.json` et disposant d'une variante résolue pour la langue active.
 
 À côté du statut, l'interface affiche le réviseur qui l'a défini. Elle parcourt
 l'historique Git de `question.meta.json` et retient le dernier commit ayant
@@ -297,7 +318,8 @@ Pour un résultat approuvé, l'importeur :
 
 1. charge le contenu de base à `canonical_source.revision` ;
 2. charge le canonical courant ;
-3. compare le fichier de la langue visée et `review.<langue>` ;
+3. compare le fichier de la langue visée, `review.<langue>` et chaque
+   métadonnée autorisée effectivement modifiée ;
 4. signale un conflit si l'un de ces éléments a changé dans le canonical ;
 5. valide le contenu de campagne ;
 6. propose le remplacement du seul fichier linguistique et la mise à jour du
@@ -306,6 +328,12 @@ Pour un résultat approuvé, l'importeur :
 Les autres champs de `question.meta.json` ne sont jamais remplacés en bloc.
 Une approbation sans modification de texte peut donc proposer uniquement le
 passage du statut à `approved`.
+
+Une référence graphique suit le couple `(question_id, langue)` de son fichier
+linguistique. Une métadonnée est commune aux langues : elle est appliquée une
+seule fois au niveau de la question dès qu'au moins un couple modifiable est
+`approved`. Seuls les chemins déclarés et réellement modifiés sont fusionnés
+dans le canonical courant.
 
 ## Rapport `--dry-run`
 
@@ -337,6 +365,7 @@ rapport sans contenir d'information supplémentaire.
       "content_changed": true,
       "status_changed": true,
       "changed_fields": ["question", "answer_b"],
+      "metadata_changed_fields": ["/HB/rationale"],
       "messages": []
     }
   ]

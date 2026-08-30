@@ -29,7 +29,7 @@ textarea.form-control {
 }
 
 .answer-textarea {
-    min-height: 62px;
+    min-height: 38px;
     min-width: 0;
     width: 100%;
 }
@@ -101,6 +101,63 @@ button, a.btn {
 .question-media {
     height: auto;
     max-width: 100%;
+}
+
+.question-heading {
+    align-items: baseline;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+}
+
+.canonical-question-id code {
+    color: #6c757d;
+    font-size: 0.72em;
+}
+
+.copy-question-id {
+    margin-top: 0;
+}
+
+.copy-confirmation {
+    font-size: 0.75rem;
+    min-width: 48px;
+}
+
+.review-tabs {
+    border-bottom: 1px solid #dee2e6;
+    display: flex;
+    gap: 4px;
+    margin-top: 20px;
+}
+
+.review-tab {
+    background: transparent;
+    border: 1px solid transparent;
+    border-radius: 4px 4px 0 0;
+    color: #495057;
+    margin: 0 0 -1px;
+    padding: 8px 14px;
+}
+
+.review-tab.active {
+    background: #f8f9fa;
+    border-color: #dee2e6 #dee2e6 #f8f9fa;
+    color: #212529;
+    font-weight: 600;
+}
+
+.review-tab-panel[hidden] {
+    display: none;
+}
+
+.picture-selection-preview {
+    max-height: 220px;
+}
+
+.rationale-edit-row .remove-rationale {
+    align-self: flex-start;
+    margin-top: 0;
 }
 
 
