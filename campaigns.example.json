@@ -2,5 +2,9 @@
   "revision-2-5-frv-rest": {
     "branch": "campaign/Revision_2.5_FRV_Rest",
     "label": "Revision 2.5 FRV Rest"
+  },
+  "full-review-de-fr-it": {
+    "branch": "campaign/Full_Review_DE_FR_IT",
+    "label": "Full Review DE FR IT"
   }
 }
