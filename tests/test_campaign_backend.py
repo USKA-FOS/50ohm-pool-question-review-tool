@@ -554,7 +554,7 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertIsNone(campaign_toc.prev_q_in_section("NF101"))
         self.assertIsNone(campaign_toc.next_q_in_section("NF201"))
 
-    def test_campaign_navigation_requires_three_levels_and_complete_index(self) -> None:
+    def test_campaign_navigation_accepts_variable_canonical_depth_and_complete_index(self) -> None:
         manifest = {"question_ids": ["q_111111111111"]}
         index = {
             "items": [
@@ -564,16 +564,20 @@ class CampaignBackendTests(unittest.TestCase):
                 }
             ]
         }
-        shallow_navigation = {
+        two_level_navigation = {
             "sections": [
                 {
                     "title": "Campaign",
-                    "questions": [{"number": "NF101"}],
+                    "sections": [
+                        {
+                            "title": "Review",
+                            "questions": [{"number": "NF101"}],
+                        }
+                    ],
                 }
             ]
         }
-        with self.assertRaisesRegex(ValueError, "chapter, section, subsection"):
-            main.validate_campaign_navigation(shallow_navigation, index, manifest)
+        main.validate_campaign_navigation(two_level_navigation, index, manifest)
 
         valid_navigation = {
             "sections": [
@@ -594,9 +598,59 @@ class CampaignBackendTests(unittest.TestCase):
             ]
         }
         main.validate_campaign_navigation(valid_navigation, index, manifest)
+        mixed_navigation = {
+            "sections": [
+                {
+                    "title": "Campaign",
+                    "sections": [{"title": "Review", "questions": [{"number": "NF101"}]}],
+                    "questions": [{"number": "NF101"}],
+                }
+            ]
+        }
+        with self.assertRaisesRegex(ValueError, "chapter hierarchy"):
+            main.validate_campaign_navigation(mixed_navigation, index, manifest)
         wrong_index = {"items": [{"question_id": "q_111111111111", "internal_code": "NF102"}]}
         with self.assertRaisesRegex(ValueError, "does not match the localized"):
             main.validate_campaign_navigation(valid_navigation, wrong_index, manifest)
+
+    def test_table_of_contents_supports_review_groups_at_different_depths(self) -> None:
+        navigation = {
+            "sections": [
+                {
+                    "title": "Chapter",
+                    "sections": [
+                        {
+                            "title": "Direct group",
+                            "questions": [
+                                {"number": "VB101"},
+                                {"number": "VB102"},
+                            ],
+                        },
+                        {
+                            "title": "Nested section",
+                            "sections": [
+                                {
+                                    "title": "Nested group",
+                                    "questions": [{"number": "VU001"}],
+                                }
+                            ],
+                        },
+                    ],
+                }
+            ]
+        }
+
+        campaign_toc = main.toc(navigation)
+
+        self.assertEqual(campaign_toc.lookup("VB101"), ("Chapter", "Direct group"))
+        self.assertEqual(
+            campaign_toc.lookup("VU001"),
+            ("Chapter", "Nested section", "Nested group"),
+        )
+        self.assertEqual(campaign_toc.next_q_in_subsection("VB101"), "VB102")
+        self.assertEqual(campaign_toc.next_q_in_section("VB101"), "VU001")
+        self.assertEqual(campaign_toc.prev_q_in_section("VU001"), "VB101")
+        self.assertEqual(campaign_toc.toc.question_count, 3)
 
     def test_language_selection_allows_same_language_review(self) -> None:
         manifest = {

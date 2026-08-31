@@ -941,10 +941,7 @@ def select_languages(manifest, requested_reference=None, requested_review=None):
 
 
 def validate_campaign_navigation(navigation, navigation_index, manifest):
-    error = (
-        'Campaign navigation must contain non-empty chapter, section, '
-        'subsection, and question levels.'
-    )
+    error = 'Campaign navigation must contain a non-empty chapter hierarchy ending in questions.'
     if not isinstance(navigation, dict) or not isinstance(navigation.get('sections'), list):
         raise ValueError(error)
 
@@ -952,23 +949,28 @@ def validate_campaign_navigation(navigation, navigation_index, manifest):
     chapters = navigation['sections']
     if not chapters:
         raise ValueError(error)
-    for chapter in chapters:
-        sections = chapter.get('sections') if isinstance(chapter, dict) else None
-        if not isinstance(sections, list) or not sections:
+
+    def collect(node):
+        if not isinstance(node, dict) or not isinstance(node.get('title'), str) or not node['title']:
             raise ValueError(error)
-        for section in sections:
-            subsections = section.get('sections') if isinstance(section, dict) else None
-            if not isinstance(subsections, list) or not subsections:
+        sections = node.get('sections')
+        questions = node.get('questions')
+        has_sections = isinstance(sections, list) and bool(sections)
+        has_questions = isinstance(questions, list) and bool(questions)
+        if has_sections == has_questions:
+            raise ValueError(error)
+        if has_sections:
+            for child in sections:
+                collect(child)
+            return
+        for question in questions:
+            number = question.get('number') if isinstance(question, dict) else None
+            if not isinstance(number, str) or not number:
                 raise ValueError(error)
-            for subsection in subsections:
-                questions = subsection.get('questions') if isinstance(subsection, dict) else None
-                if not isinstance(questions, list) or not questions:
-                    raise ValueError(error)
-                for question in questions:
-                    number = question.get('number') if isinstance(question, dict) else None
-                    if not isinstance(number, str) or not number:
-                        raise ValueError(error)
-                    navigation_numbers.append(number)
+            navigation_numbers.append(number)
+
+    for chapter in chapters:
+        collect(chapter)
 
     if len(set(navigation_numbers)) != len(navigation_numbers):
         raise ValueError('Campaign navigation contains duplicate question numbers.')

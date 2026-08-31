@@ -1,5 +1,23 @@
 {% extends "layout.html" %}
 
+{% macro render_navigation(nodes, depth) %}
+<ol{% if depth == 1 %} type="I"{% elif depth == 2 %} type="A"{% endif %}>
+    {% for node in nodes %}
+    {% if node.is_review_group %}
+    <li class="d-flex align-items-center">
+        <div class="progress mx-2" style="width:50px;">
+            <div class="progress-bar bg-success" role="progressbar" style="width: {{node.progress}}%;" aria-valuenow="{{node.progress}}" aria-valuemin="0" aria-valuemax="100"></div>
+        </div>
+        <a href="/campaign/{{ campaign_id }}/edit/{{node.first_question}}?reference_language={{reference_language}}&review_language={{review_language}}">{{node.value}}</a> ({{node.n_reviewed}}/{{node.question_count}} questions)
+    </li>
+    {% else %}
+    <li>{{node.value}}</li>
+    {{ render_navigation(node.children, depth + 1) }}
+    {% endif %}
+    {% endfor %}
+</ol>
+{% endmacro %}
+
 {% block content %}
 
 <h2>{{ campaign_label }}</h2>
@@ -33,27 +51,7 @@
         </div>
     </form>
     <h4 class="mt-4">Table of Contents</h4>
-    <ol type="I">
-        {% for chapter in toc %}
-        <li>{{chapter.value}}</li>
-        <ol type="A">
-        {% for section in chapter.children %}
-            <li>{{section.value}}</li>
-            <ol>
-                {% for subsection in section.children %}
-                <li class="d-flex align-items-center">
-                <div class="progress mx-2" style="width:50px;">
-                    <div class="progress-bar bg-success" role="progressbar" style="width: {{subsection.progress}}%;" aria-valuenow="{{subsection.progress}}" aria-valuemin="0" aria-valuemax="100">
-                    </div>
-                </div>
-                <a href="/campaign/{{ campaign_id }}/edit/{{subsection.children[0].value}}?reference_language={{reference_language}}&review_language={{review_language}}">{{subsection.value}}</a> ({{subsection.n_reviewed}}/{{subsection.children|count}} questions)
-                </li>
-                {% endfor %}
-            </ol>
-        {% endfor %}
-        </ol>
-        {% endfor %}
-    </ol>
+    {{ render_navigation(toc, 1) }}
     <h4 class="mt-4">Edit by Question Key</h4>
     <form action="/campaign/{{ campaign_id }}/edit" method="get">
         <label for="key">Enter question key:</label>

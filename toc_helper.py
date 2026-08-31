@@ -9,16 +9,37 @@ class tree_node:
     children: list["tree_node"] = field(default_factory=list)
     painted: bool = False # FIXME: Only needed for pruning below
     reviewed: bool = False
+    is_question: bool = False
+
+    @property
+    def is_review_group(self):
+        return bool(self.children) and all(child.is_question for child in self.children)
+
+    @property
+    def question_count(self):
+        if self.is_question:
+            return 1
+        return sum(child.question_count for child in self.children)
 
     @property
     def n_reviewed(self):
-        # FIXME: Only makes sense to call on subsection node
-        return sum([c.reviewed for c in self.children])
+        if self.is_question:
+            return int(self.reviewed)
+        return sum(child.n_reviewed for child in self.children)
 
     @property
     def progress(self):
-        # FIXME: Only makes sense to call on subsection node
-        return 100*self.n_reviewed/len(self.children)
+        return 100 * self.n_reviewed / self.question_count if self.question_count else 0
+
+    @property
+    def first_question(self):
+        if self.is_question:
+            return self.value
+        for child in self.children:
+            first = child.first_question
+            if first is not None:
+                return first
+        return None
 
 class toc:
     def __init__(self, input_json=None):
@@ -26,29 +47,37 @@ class toc:
             input_json = json.loads(Path('fragenkatalog3b.json').read_text())
         self.toc = tree_node(parent=None, value='')
         self.question_map = {} # Use to look up chapters based on question key
-        self.subsections = []
+        self.review_groups = []
+        self.subsections = self.review_groups
+
+        def add_group(source, parent):
+            current = tree_node(parent=parent, value=source['title'])
+            parent.children.append(current)
+            if 'questions' in source:
+                self.review_groups.append(current)
+                for question in source['questions']:
+                    question_node = tree_node(
+                        parent=current,
+                        value=question['number'],
+                        is_question=True,
+                    )
+                    current.children.append(question_node)
+                    self.question_map[question['number']] = question_node
+            else:
+                for child in source['sections']:
+                    add_group(child, current)
 
         for chapter in input_json['sections']:
-            current_chapter = tree_node(parent=self.toc, value=chapter['title'])
-            self.toc.children.append(current_chapter)
-            for section in chapter['sections']:
-                current_section = tree_node(parent=current_chapter, value=section['title'])
-                current_chapter.children.append(current_section)
-                for subsection in section['sections']:
-                    current_subsection = tree_node(parent=current_section, value=subsection['title'])
-                    current_section.children.append(current_subsection)
-                    self.subsections.append(current_subsection)
-                    for q in subsection['questions']:
-                        current_question = tree_node(parent=current_subsection, value=q['number'])
-                        current_subsection.children.append(current_question)
-                        self.question_map[q['number']] = current_question
+            add_group(chapter, self.toc)
 
 
     def lookup(self, q: str):
-        subsection = self.question_map[q].parent
-        section = subsection.parent
-        chapter = section.parent
-        return chapter.value, section.value, subsection.value
+        values = []
+        current = self.question_map[q].parent
+        while current is not None and current.parent is not None:
+            values.append(current.value)
+            current = current.parent
+        return tuple(reversed(values))
 
     def next_q_in_subsection(self, q: str):
         q_node = self.question_map[q]
@@ -67,18 +96,18 @@ class toc:
         return subsection.children[idx-1].value
 
     def next_q_in_section(self, q: str):
-        subsection = self.question_map[q].parent
-        idx = self.subsections.index(subsection)
-        if idx+1 == len(self.subsections):
+        group = self.question_map[q].parent
+        idx = self.review_groups.index(group)
+        if idx+1 == len(self.review_groups):
             return None
-        return self.subsections[idx+1].children[0].value
+        return self.review_groups[idx+1].first_question
 
     def prev_q_in_section(self, q: str):
-        subsection = self.question_map[q].parent
-        idx = self.subsections.index(subsection)
+        group = self.question_map[q].parent
+        idx = self.review_groups.index(group)
         if idx == 0:
             return None
-        return self.subsections[idx-1].children[0].value
+        return self.review_groups[idx-1].first_question
 
     def mark_reviewed(self, q: str):
         self.question_map[q].reviewed = True

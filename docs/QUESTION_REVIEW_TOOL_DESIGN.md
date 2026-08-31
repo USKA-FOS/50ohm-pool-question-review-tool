@@ -89,11 +89,11 @@ The overview derives structure from the generated navigation index but derives
 progress from current `question.meta.json` files. Export-time statuses are not
 used as live state.
 
-The current table-of-contents parser requires generated navigation to contain
-three levels before questions: chapter, section, and subsection. The campaign
-loader validates this structure and exact index coverage before constructing
-the navigation tree. This is a current compatibility constraint of the review
-tool, including for monolingual and explicit-list campaigns.
+The table-of-contents parser requires generated navigation to contain the
+canonical hierarchy before questions. Branches may have different depths; the
+campaign loader validates the recursive structure and exact index coverage
+before constructing the navigation tree. No synthetic hierarchy level is
+added for monolingual, explicit-list, or full-pool campaigns.
 
 The reviewer can independently choose:
 
