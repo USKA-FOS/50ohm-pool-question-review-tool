@@ -107,8 +107,8 @@ def load_campaign_configs(raw_json, legacy_branch, default_campaign, config_file
             raw_configs = json.loads(raw_json)
         except json.JSONDecodeError as exc:
             raise RuntimeError(f'{source_name} must contain valid JSON.') from exc
-        if not isinstance(raw_configs, dict) or not raw_configs:
-            raise RuntimeError(f'{source_name} must contain a non-empty JSON object.')
+        if not isinstance(raw_configs, dict):
+            raise RuntimeError(f'{source_name} must contain a JSON object.')
     elif legacy_branch:
         raw_configs = {default_campaign: {'branch': legacy_branch, 'label': default_campaign}}
     else:
@@ -128,9 +128,18 @@ def load_campaign_configs(raw_json, legacy_branch, default_campaign, config_file
         label = raw_config.get('label', campaign_id)
         if not isinstance(label, str) or not label.strip():
             raise RuntimeError(f'Campaign {campaign_id} has no valid label.')
-        configs[campaign_id] = {'branch': branch, 'label': label}
-    if default_campaign not in configs:
-        raise RuntimeError(f'DEFAULT_CAMPAIGN {default_campaign!r} is not configured.')
+        enabled = raw_config.get('enabled', True)
+        if not isinstance(enabled, bool):
+            raise RuntimeError(f'Campaign {campaign_id} enabled must be a boolean.')
+        configs[campaign_id] = {'branch': branch, 'label': label, 'enabled': enabled}
+
+    active_campaigns = {
+        campaign_id for campaign_id, config in configs.items() if config['enabled']
+    }
+    if active_campaigns and default_campaign not in active_campaigns:
+        raise RuntimeError(
+            f'DEFAULT_CAMPAIGN {default_campaign!r} is not configured as an active campaign.'
+        )
     return configs
 
 
@@ -144,9 +153,19 @@ CAMPAIGNS = load_campaign_configs(
 
 def campaign_config(campaign_id):
     try:
-        return CAMPAIGNS[campaign_id]
+        config = CAMPAIGNS[campaign_id]
     except KeyError as exc:
         raise ValueError(f'Unknown campaign: {campaign_id}.') from exc
+    if not config.get('enabled', True):
+        raise ValueError(f'Campaign is disabled: {campaign_id}.')
+    return config
+
+
+def default_active_campaign():
+    config = CAMPAIGNS.get(DEFAULT_CAMPAIGN)
+    if config and config.get('enabled', True):
+        return DEFAULT_CAMPAIGN
+    return None
 
 
 def campaign_branch(campaign_id):
@@ -1072,7 +1091,10 @@ def remember_review_preferences(response, reference_language, review_language, l
 
 @app.get('/')
 def root():
-    return RedirectResponse(campaign_url(DEFAULT_CAMPAIGN))
+    campaign_id = default_active_campaign()
+    if campaign_id is None:
+        return HTMLResponse('<h1>No active review campaign</h1>')
+    return RedirectResponse(campaign_url(campaign_id))
 
 
 @app.get('/campaign/{campaign_id}/', response_class=HTMLResponse)

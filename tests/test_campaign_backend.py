@@ -29,9 +29,77 @@ class CampaignBackendTests(unittest.TestCase):
 
         self.assertEqual(configs["receiver"]["branch"], "campaign/receiver")
         self.assertEqual(configs["receiver"]["label"], "Receiver review")
+        self.assertTrue(configs["receiver"]["enabled"])
         self.assertEqual(configs["antennas"]["branch"], "campaign/antennas")
         with self.assertRaisesRegex(RuntimeError, "DEFAULT_CAMPAIGN"):
             main.load_campaign_configs('{"receiver":"campaign/receiver"}', None, "missing")
+
+    def test_campaign_configuration_supports_disabled_campaigns(self) -> None:
+        configs = main.load_campaign_configs(
+            '{"finished":{"branch":"campaign/finished","enabled":false},'
+            '"current":{"branch":"campaign/current"}}',
+            None,
+            "current",
+        )
+
+        self.assertFalse(configs["finished"]["enabled"])
+        self.assertTrue(configs["current"]["enabled"])
+
+    def test_campaign_configuration_allows_no_active_campaign(self) -> None:
+        configs = main.load_campaign_configs(
+            '{"finished":{"branch":"campaign/finished","enabled":false}}',
+            None,
+            "finished",
+        )
+
+        self.assertFalse(configs["finished"]["enabled"])
+        self.assertEqual(main.load_campaign_configs("{}", None, "default"), {})
+
+    def test_campaign_configuration_rejects_invalid_enabled_value(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "enabled must be a boolean"):
+            main.load_campaign_configs(
+                '{"campaign":{"branch":"campaign/test","enabled":"false"}}',
+                None,
+                "campaign",
+            )
+
+    def test_campaign_configuration_requires_active_default_when_any_are_active(self) -> None:
+        with self.assertRaisesRegex(RuntimeError, "active campaign"):
+            main.load_campaign_configs(
+                '{"finished":{"branch":"campaign/finished","enabled":false},'
+                '"current":{"branch":"campaign/current"}}',
+                None,
+                "finished",
+            )
+
+    def test_disabled_campaign_is_not_resolvable(self) -> None:
+        configs = {
+            "finished": {
+                "branch": "campaign/finished",
+                "label": "Finished",
+                "enabled": False,
+            }
+        }
+        with patch.object(main, "CAMPAIGNS", configs):
+            with self.assertRaisesRegex(ValueError, "disabled"):
+                main.campaign_config("finished")
+
+    def test_root_reports_when_no_campaign_is_active(self) -> None:
+        configs = {
+            "finished": {
+                "branch": "campaign/finished",
+                "label": "Finished",
+                "enabled": False,
+            }
+        }
+        with (
+            patch.object(main, "CAMPAIGNS", configs),
+            patch.object(main, "DEFAULT_CAMPAIGN", "finished"),
+        ):
+            response = main.root()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertIn(b"No active review campaign", response.body)
 
     def test_campaign_configuration_file_overrides_inline_json(self) -> None:
         with tempfile.TemporaryDirectory() as temporary:
@@ -54,6 +122,7 @@ class CampaignBackendTests(unittest.TestCase):
                 "german-cleanup": {
                     "branch": "campaign/german-cleanup",
                     "label": "German cleanup",
+                    "enabled": True,
                 }
             },
         )

@@ -69,8 +69,9 @@ docker compose -f docker-compose.local.yml down
 ```
 
 `CAMPAIGNS_FILE` is the preferred campaign configuration. It points to a JSON
-file mapping stable URL identifiers to Git branches and optional display
-labels. Start from the tracked examples:
+file mapping stable URL identifiers to Git branches, optional display labels,
+and an optional `enabled` boolean. An omitted `enabled` is equivalent to
+`true`. Start from the tracked examples:
 
 ```bash
 cp campaigns.example.json campaigns.json
@@ -83,6 +84,14 @@ override and mounts `campaigns.json` read-only. Neither local file is tracked.
 `CAMPAIGNS_JSON` remains a compatible one-line fallback; `CAMPAIGN_BRANCH`
 remains the legacy single-campaign fallback. When `CAMPAIGNS_FILE` is set, it
 takes precedence over both.
+
+To close a completed campaign without deleting its Git history, set
+`"enabled": false` in `campaigns.json`. Disabled campaigns cannot be opened,
+including through a direct URL. If another campaign remains active,
+`DEFAULT_CAMPAIGN` must identify an active campaign. If none remains active,
+the application continues to run and its root page reports that no campaign is
+active; an empty `{}` configuration is also valid. Keep the completed campaign
+branch unchanged for audit and traceability.
 
 Reviewers receive the relevant campaign URL. All campaigns share the same
 GitHub OAuth callback and application process.

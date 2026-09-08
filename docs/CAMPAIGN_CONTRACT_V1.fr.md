@@ -89,6 +89,7 @@ Exemple complet :
   },
   "languages": ["de", "fr", "it"],
   "editable_languages": ["fr"],
+  "canonical_import_allowed": true,
   "editable_metadata_fields": ["/class_level", "/HB/rationale"],
   "editable_picture_fields": ["picture_question_url"],
   "question_ids": [
@@ -123,15 +124,20 @@ Exemple complet :
 
 Champs facultatifs :
 
+- `canonical_import_allowed` : booléen valant `true` par défaut ; la valeur
+  `false` interdit explicitement toute réintégration dans le canonical et doit
+  être utilisée pour les campagnes sandbox permanentes ;
 - `editable_metadata_fields` : sous-ensemble ordonné des chemins JSON Pointer
   `/class_level`, `/HB/rationale` et `/HB/motivation` ;
 - `editable_picture_fields` : sous-ensemble ordonné de
   `picture_question_url` et `picture_answer_a_url` à
   `picture_answer_d_url`.
 
-Un champ facultatif absent équivaut à une liste vide. Les doublons et valeurs
-inconnues rendent la campagne invalide. Ces listes sont des autorisations, pas
-des demandes de modification automatique.
+Une liste facultative absente équivaut à une liste vide. Les doublons et
+valeurs inconnues rendent la campagne invalide. Ces listes sont des
+autorisations, pas des demandes de modification automatique. Un
+`canonical_import_allowed` absent conserve le comportement historique et
+autorise l'import.
 
 `source_ref` conserve le nom de la branche ou du tag fourni à l'exporteur. Il
 est informatif. Seul le commit `revision` est normatif.
@@ -143,6 +149,29 @@ active à un instant donné. Changer cette sélection ne retire pas les
 modifications ou approbations déjà enregistrées dans les autres langues.
 Une campagne peut ne contenir qu'une seule langue dans `languages`; cette
 langue sert alors à la fois de référence et de langue à réviser.
+
+## Activation dans l'outil de révision
+
+L'activation opérationnelle ne fait pas partie de `campaign.meta.json`. Elle
+est définie dans le fichier de déploiement `campaigns.json` :
+
+```json
+{
+  "fr-terminology-antennas": {
+    "branch": "campaign/fr-terminology-antennas",
+    "label": "French terminology: antennas",
+    "enabled": false
+  }
+}
+```
+
+`enabled` est facultatif et vaut `true` par défaut. Une campagne terminée est
+désactivée avec `false`, sans supprimer ni modifier sa branche Git. Elle n'est
+alors plus accessible, même par son URL directe. Une configuration sans aucune
+campagne active est valide et l'application affiche un état vide explicite.
+Si au moins une campagne est active, `DEFAULT_CAMPAIGN` doit désigner l'une
+d'elles. Après modification de `campaigns.json`, le conteneur doit être recréé
+pour recharger la configuration.
 
 L'export échoue si une langue modifiable n'est pas dans `languages`, si une
 question est répétée, absente du canonical, ou si les références Git ne peuvent
