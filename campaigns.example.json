@@ -3,6 +3,10 @@
     "branch": "campaign/review-tool-sandbox",
     "label": "Review Tool Sandbox"
   },
+  "revision-2-6-rejected-de": {
+    "branch": "campaign/Revision_2.6_Rejected_DE",
+    "label": "Revision 2.6 Rejected DE"
+  },
   "revision-2-5-frv-rest": {
     "branch": "campaign/Revision_2.5_FRV_Rest",
     "label": "Revision 2.5 FRV Rest",

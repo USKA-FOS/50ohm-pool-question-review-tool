@@ -42,7 +42,7 @@ docker run --rm --detach \
   --env GITHUB_OWNER=isqsoft \
   --env GITHUB_REPO=50ohm-question-review-campaigns \
   --env CAMPAIGNS_FILE=/app/config/campaigns.json \
-  --env DEFAULT_CAMPAIGN=receiver-signals \
+  --env DEFAULT_CAMPAIGN=review-tool-sandbox \
   --env GITHUB_CALLBACK_URL=http://localhost:8080/auth/callback \
   --env SESSION_HTTPS_ONLY=false \
   --env GITHUB_PROFILE=true \
@@ -51,7 +51,7 @@ docker run --rm --detach \
 ```
 
 The server redirects `http://localhost:8080` to the default campaign at
-`http://localhost:8080/campaign/receiver-signals/`. Its health endpoint is
+`http://localhost:8080/campaign/review-tool-sandbox/`. Its health endpoint is
 `http://localhost:8080/healthz`.
 
 For repeatable local use, the dedicated Compose file avoids the production
