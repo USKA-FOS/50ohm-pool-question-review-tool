@@ -1255,12 +1255,6 @@ def edit_question(request: Request, campaign_id: str, key: str):
         if key not in questions_by_number:
             return HTMLResponse('<h1>Question not found in campaign</h1>', status_code=404)
         question_id = questions_by_number[key]['question_id']
-        data_reference = fetch_path(
-            campaign_id,
-            branch,
-            f'pool/questions/{question_id}/question.{reference_language}.json',
-            token,
-        )
         data_review = fetch_path(
             campaign_id,
             branch,
@@ -1268,6 +1262,11 @@ def edit_question(request: Request, campaign_id: str, key: str):
             token,
         )
         data_original = fetch_original_question(campaign_id, manifest, question_id, review_language, token)
+        data_reference = (
+            data_original
+            if reference_language == review_language
+            else fetch_original_question(campaign_id, manifest, question_id, reference_language, token)
+        )
         media_manifest = fetch_path(campaign_id, branch, 'media.refs.json', token)['json']
         editable_metadata_fields = editable_field_list(
             manifest,

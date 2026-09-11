@@ -16,9 +16,11 @@ Au premier accès authentifié à une campagne, l'application :
 5. calcule localement les SHA Git des blobs et conserve les deux snapshots en
    mémoire.
 
-Le snapshot d'export est immuable et alimente les différences
-original/commité. Le snapshot courant alimente le manifeste, la navigation,
-les questions, les métadonnées et les commentaires.
+Le snapshot d'export est immuable et alimente la colonne `Reference` ainsi que
+les différences original/commité. La colonne `Reference` ne doit donc jamais
+changer après un commit de révision, y compris lorsque la langue de référence
+est aussi la langue révisée. Le snapshot courant alimente le manifeste, la
+navigation, les questions à éditer, les métadonnées et les commentaires.
 
 ## Navigation
 

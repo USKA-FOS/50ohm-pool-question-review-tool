@@ -209,6 +209,130 @@ class CampaignBackendTests(unittest.TestCase):
         self.assertIs(result, expected)
         ensure.assert_called_once_with("default", "token")
 
+    def test_editor_reference_uses_export_snapshot_after_current_text_changes(self) -> None:
+        request = SimpleNamespace(
+            session={"token": "test-token"},
+            query_params={"reference_language": "de", "review_language": "fr"},
+            cookies={},
+        )
+        manifest = {
+            "languages": ["de", "fr"],
+            "editable_languages": ["fr"],
+            "question_ids": ["q_111111111111"],
+        }
+        current_review = {
+            "question_id": "q_111111111111",
+            "language": "fr",
+            "question": "Version française courante",
+            "answer_a": "A",
+            "answer_b": "B",
+            "answer_c": "C",
+            "answer_d": "D",
+            "picture_question_url": None,
+            "picture_answer_a_url": None,
+            "picture_answer_b_url": None,
+            "picture_answer_c_url": None,
+            "picture_answer_d_url": None,
+        }
+        original_review = {**current_review, "question": "Version française exportée"}
+        original_reference = {
+            **current_review,
+            "language": "de",
+            "question": "Deutsche Exportfassung",
+        }
+        current_reference = {
+            **original_reference,
+            "question": "Nach dem Export geänderte Fassung",
+        }
+        meta = {
+            "id": "q_111111111111",
+            "review": {"de": "approved", "fr": "to_be_reviewed"},
+        }
+        toc = SimpleNamespace(
+            next_q_in_subsection=lambda key: None,
+            prev_q_in_subsection=lambda key: None,
+            next_q_in_section=lambda key: None,
+            prev_q_in_section=lambda key: None,
+        )
+
+        def fetch(campaign_id, ref, path, token):
+            files = {
+                "campaign.meta.json": {"sha": "manifest-sha", "json": manifest},
+                "pool/questions/q_111111111111/question.de.json": {
+                    "sha": "current-de-sha",
+                    "json": current_reference,
+                },
+                "pool/questions/q_111111111111/question.fr.json": {
+                    "sha": "current-fr-sha",
+                    "json": current_review,
+                },
+                "pool/questions/q_111111111111/question.meta.json": {
+                    "sha": "meta-sha",
+                    "json": meta,
+                },
+                "media.refs.json": {"sha": "media-sha", "json": {"items": {}}},
+            }
+            return files[path]
+
+        def fetch_original(campaign_id, campaign_manifest, question_id, language, token):
+            originals = {"de": original_reference, "fr": original_review}
+            return {"sha": f"original-{language}-sha", "json": originals[language]}
+
+        captured = []
+
+        def render_response(*, request, name, context):
+            captured.append(context)
+            return SimpleNamespace(status_code=200, set_cookie=lambda *args, **kwargs: None)
+
+        with (
+            patch.object(main, "fetch_path", side_effect=fetch),
+            patch.object(
+                main,
+                "load_campaign",
+                side_effect=[
+                    (
+                        manifest,
+                        toc,
+                        {"NF101": {"question_id": "q_111111111111"}},
+                        "de",
+                        "fr",
+                    ),
+                    (
+                        manifest,
+                        toc,
+                        {"NF101": {"question_id": "q_111111111111"}},
+                        "de",
+                        "de",
+                    ),
+                ],
+            ),
+            patch.object(main, "fetch_original_question", side_effect=fetch_original) as original_fetch,
+            patch.object(main, "question_media_urls", return_value={
+                "picture_question": None,
+                "picture_a": None,
+                "picture_b": None,
+                "picture_c": None,
+                "picture_d": None,
+            }),
+            patch.object(main, "status_author", return_value=None),
+            patch.object(main, "load_comments", return_value=(None, [])),
+            patch.object(main.templates, "TemplateResponse", side_effect=render_response),
+        ):
+            response = main.edit_question(request, "default", "NF101")
+            same_language_response = main.edit_question(request, "default", "NF101")
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(same_language_response.status_code, 200)
+        self.assertEqual(captured[0]["reference"]["question"], "Deutsche Exportfassung")
+        self.assertNotEqual(captured[0]["reference"]["question"], current_reference["question"])
+        self.assertEqual(captured[0]["review"]["question"], "Version française courante")
+        self.assertEqual(captured[1]["reference"]["question"], "Deutsche Exportfassung")
+        self.assertEqual(captured[1]["review"]["question"], current_reference["question"])
+        self.assertEqual(
+            [call.args[3] for call in original_fetch.call_args_list],
+            ["fr", "de", "de"],
+        )
+
     def test_campaign_snapshot_is_loaded_only_once(self) -> None:
         current = {"campaign.meta.json": {"sha": "meta", "json": {}}}
         original = {"campaign.meta.json": {"sha": "original-meta", "json": {}}}
