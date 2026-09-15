@@ -121,7 +121,7 @@
     </aside>
 </div>
 
-<form action="/campaign/{{ campaign_id }}/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
+<form id="review-form" data-campaign="{{ campaign_id }}" data-question="{{ key }}" data-reference="{{ reference_language }}" data-review="{{ review_language }}" action="/campaign/{{ campaign_id }}/save/{{ key }}?reference_language={{reference_language}}&review_language={{review_language}}" method="post">
     <input type="hidden" name="sha" value="{{ sha }}">
     <input type="hidden" name="meta_sha" value="{{ meta_sha }}">
     <input type="hidden" name="comments_sha" value="{{ comments_sha }}">
@@ -328,5 +328,7 @@ document.addEventListener("DOMContentLoaded", function() {
     });
 });
 </script>
+
+<script src="/static/review-draft.js" defer></script>
 
 {% endblock %}

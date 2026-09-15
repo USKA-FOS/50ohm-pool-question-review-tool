@@ -3,6 +3,7 @@ import base64
 from collections import defaultdict
 from contextvars import ContextVar
 import hashlib
+import html
 from io import BytesIO
 import json
 import logging
@@ -72,6 +73,7 @@ PREFERENCE_COOKIE_MAX_AGE = 365 * 24 * 60 * 60
 REFERENCE_LANGUAGE_COOKIE = '50ohm_reference_language'
 REVIEW_LANGUAGE_COOKIE = '50ohm_review_language'
 LAST_QUESTION_COOKIE = '50ohm_last_question'
+LAST_CAMPAIGN_COOKIE = '50ohm_last_campaign'
 PROFILE_REQUEST_ID = ContextVar('profile_request_id', default='-')
 PROFILE_EVENTS = ContextVar('profile_events', default=None)
 LOGGER = logging.getLogger('uvicorn.error')
@@ -1089,12 +1091,118 @@ def remember_review_preferences(response, reference_language, review_language, l
         response.set_cookie(LAST_QUESTION_COOKIE, last_question, **cookie_options)
 
 
+def preferred_campaign(request, requested=None, strict=False):
+    if requested:
+        try:
+            campaign_config(requested)
+            return requested
+        except ValueError:
+            if strict:
+                raise
+    remembered = getattr(request, 'cookies', {}).get(LAST_CAMPAIGN_COOKIE)
+    if remembered:
+        try:
+            campaign_config(remembered)
+            return remembered
+        except ValueError:
+            pass
+    return default_active_campaign()
+
+
+def github_unauthorized(exc):
+    return (
+        isinstance(exc, requests.exceptions.HTTPError)
+        and exc.response is not None
+        and exc.response.status_code == 401
+    )
+
+
+DRAFT_FIELDS = (
+    'question', 'answer_a', 'answer_b', 'answer_c', 'answer_d',
+    'metadata_class_level', 'metadata_rationale', 'metadata_motivation',
+    'picture_question_url', 'picture_answer_a_url', 'picture_answer_b_url',
+    'picture_answer_c_url', 'picture_answer_d_url', 'comment',
+)
+
+
+def expired_session_response(request, campaign_id, key=None, fields=None):
+    draft_campaign_id = campaign_id
+    request.session.clear()
+    campaign_id = preferred_campaign(request, campaign_id)
+    login_url = '/login?' + urlencode({'campaign_id': campaign_id}) if campaign_id else '/'
+    draft_html = ''
+    if key is not None and fields is not None:
+        reference = request.query_params.get('reference_language') or request.cookies.get(REFERENCE_LANGUAGE_COOKIE, '')
+        review = request.query_params.get('review_language') or request.cookies.get(REVIEW_LANGUAGE_COOKIE, '')
+        storage_key = '50ohm-review-draft:' + json.dumps(
+            [draft_campaign_id, key, reference, review], separators=(',', ':'),
+        )
+        draft = {'storage_key': storage_key, 'fields': fields}
+        encoded = json.dumps(draft, ensure_ascii=True).replace('<', '\\u003c')
+        readable = html.escape(json.dumps(fields, ensure_ascii=True, indent=2))
+        draft_html = (
+            '<p id="draft-status">Your submitted inputs are preserved below. '
+            'Copy them before reconnecting if browser storage is unavailable.</p>'
+            '<p>A GitHub operation may already have completed. Check the question '
+            'and its history before submitting again. Nothing will be retried automatically.</p>'
+            '<details open><summary>Submitted inputs (copyable backup)</summary>'
+            f'<textarea readonly rows="12" aria-label="Submitted inputs">{readable}</textarea></details>'
+            f'<script type="application/json" id="expired-draft">{encoded}</script>'
+            '<script src="/static/review-draft.js" defer></script>'
+        )
+    LOGGER.warning('GitHub session expired campaign=%s method=%s', campaign_id, request.method)
+    response = HTMLResponse(
+        '<!doctype html><html lang="en"><head><meta charset="utf-8">'
+        '<meta name="viewport" content="width=device-width,initial-scale=1">'
+        '<title>GitHub session expired</title>'
+        '<style>body{font-family:"IBM Plex Sans","Aptos",sans-serif;max-width:48rem;'
+        'margin:3rem auto;padding:0 1rem;line-height:1.6;color:#172126;background:#f4f1e8}'
+        'h1{font-size:1.5rem}textarea{box-sizing:border-box;width:100%;padding:1rem}'
+        'a{display:inline-block;margin:1rem 0;padding:.7rem 1rem;background:#172126;'
+        'color:white;text-decoration:none}</style></head><body>'
+        '<h1>GitHub session expired</h1>'
+        '<p>Your GitHub session has expired or been revoked. Please sign in again.</p>'
+        + draft_html
+        + f'<a href="{html.escape(login_url, quote=True)}">Login with GitHub</a>'
+        + '</body></html>',
+        status_code=401, headers={'Cache-Control': 'no-store'},
+    )
+    return remember_campaign(response, campaign_id)
+
+
+def remember_campaign(response, campaign_id):
+    if campaign_id is not None:
+        response.set_cookie(
+            LAST_CAMPAIGN_COOKIE, campaign_id,
+            max_age=PREFERENCE_COOKIE_MAX_AGE, path='/',
+            httponly=True, samesite='lax',
+            secure=os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
+        )
+    else:
+        response.delete_cookie(LAST_CAMPAIGN_COOKIE, path='/')
+    return response
+
+
+@app.middleware('http')
+async def remember_current_campaign(request, call_next):
+    response = await call_next(request)
+    parts = request.url.path.split('/')
+    if len(parts) >= 3 and parts[1] == 'campaign':
+        try:
+            campaign_config(parts[2])
+        except ValueError:
+            pass
+        else:
+            remember_campaign(response, parts[2])
+    return response
+
+
 @app.get('/')
-def root():
-    campaign_id = default_active_campaign()
+def root(request: Request = None):
+    campaign_id = preferred_campaign(request)
     if campaign_id is None:
         return HTMLResponse('<h1>No active review campaign</h1>')
-    return RedirectResponse(campaign_url(campaign_id))
+    return remember_campaign(RedirectResponse(campaign_url(campaign_id)), campaign_id)
 
 
 @app.get('/campaign/{campaign_id}/', response_class=HTMLResponse)
@@ -1122,6 +1230,8 @@ def index(request: Request, campaign_id: str):
             )
             limit_json = None
         except requests.exceptions.HTTPError as e:
+            if github_unauthorized(e):
+                return expired_session_response(request, campaign_id)
             return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
         except ValueError as e:
             return HTMLResponse(f'<h1>Invalid language selection</h1><pre>{e}</pre>', status_code=400)
@@ -1169,11 +1279,13 @@ def healthz():
 
 
 @app.get('/login')
-def login(request: Request, campaign_id: str = DEFAULT_CAMPAIGN):
+def login(request: Request, campaign_id: str | None = None):
     try:
-        campaign_config(campaign_id)
+        campaign_id = preferred_campaign(request, campaign_id, strict=True)
     except ValueError as exc:
         return HTMLResponse(f'<h1>Campaign not found</h1><pre>{exc}</pre>', status_code=404)
+    if campaign_id is None:
+        return remember_campaign(HTMLResponse('<h1>No active review campaign</h1>'), None)
     state = secrets.token_urlsafe(32)
     request.session['oauth_state'] = state
     request.session['oauth_campaign_id'] = campaign_id
@@ -1183,16 +1295,17 @@ def login(request: Request, campaign_id: str = DEFAULT_CAMPAIGN):
         'scope': SCOPE,
         'state': state,
     })
-    return RedirectResponse(f'https://github.com/login/oauth/authorize?{query}')
+    return remember_campaign(RedirectResponse(f'https://github.com/login/oauth/authorize?{query}'), campaign_id)
 
 
 @app.get('/auth/callback')
 def auth_callback(code: str, state: str, request: Request):
     expected_state = request.session.pop('oauth_state', None)
-    campaign_id = request.session.pop('oauth_campaign_id', DEFAULT_CAMPAIGN)
+    campaign_id = request.session.pop('oauth_campaign_id', None)
     if not expected_state or not secrets.compare_digest(state, expected_state):
         return HTMLResponse('<h1>Invalid OAuth state</h1>', status_code=400)
 
+    campaign_id = preferred_campaign(request, campaign_id)
     resp = github_request(
         'POST',
         'https://github.com/login/oauth/access_token',
@@ -1220,15 +1333,25 @@ def auth_callback(code: str, state: str, request: Request):
         headers=github_headers(token),
         timeout=15,
     )
-    user_resp.raise_for_status()
+    try:
+        user_resp.raise_for_status()
+    except requests.exceptions.HTTPError as exc:
+        if github_unauthorized(exc):
+            return expired_session_response(request, campaign_id)
+        raise
     request.session['username'] = user_resp.json().get('login', 'unknown-user')
-    return RedirectResponse(campaign_url(campaign_id))
+    if campaign_id is None:
+        return remember_campaign(HTMLResponse('<h1>No active review campaign</h1>'), None)
+    return remember_campaign(RedirectResponse(campaign_url(campaign_id)), campaign_id)
 
 
 @app.get('/logout')
-def logout(request: Request, campaign_id: str = DEFAULT_CAMPAIGN):
+def logout(request: Request, campaign_id: str | None = None):
+    campaign_id = preferred_campaign(request, campaign_id)
     request.session.clear()
-    return RedirectResponse(campaign_url(campaign_id))
+    if campaign_id is None:
+        return remember_campaign(HTMLResponse('<h1>No active review campaign</h1>'), None)
+    return remember_campaign(RedirectResponse(campaign_url(campaign_id)), campaign_id)
 
 # Extract GET parameter (used in forms) and redirect
 @app.get('/campaign/{campaign_id}/edit', response_class=HTMLResponse)
@@ -1294,6 +1417,8 @@ def edit_question(request: Request, campaign_id: str, key: str):
         review_status_author = status_author(campaign_id, meta_path, review_language, token)
         comments_sha, comments = load_comments(campaign_id, question_id, review_language, token)
     except (requests.exceptions.HTTPError, ValueError) as e:
+        if github_unauthorized(e):
+            return expired_session_response(request, campaign_id)
         return HTMLResponse(f'<h1>Error</h1><pre>{e.args[0]}</pre>')
 
     response = templates.TemplateResponse(
@@ -1368,9 +1493,16 @@ def save_question(
     picture_answer_d_url: Optional[str] = Form(None),
     comment: Optional[str] = Form(None),
 ):
+    submitted = locals()
+    draft_fields = {
+        name: submitted[name] for name in DRAFT_FIELDS
+        if isinstance(submitted.get(name), str)
+        or (isinstance(submitted.get(name), list)
+            and all(isinstance(item, str) for item in submitted[name]))
+    }
     token = get_token(request)
     if not token:
-        return RedirectResponse(f'/login?{urlencode({"campaign_id": campaign_id})}')
+        return expired_session_response(request, campaign_id, key, draft_fields)
     reference_language = request.query_params.get('reference_language')
     review_language = request.query_params.get('review_language')
     try:
@@ -1520,6 +1652,8 @@ def save_question(
     except CampaignWriteError as exc:
         return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=502)
     except requests.exceptions.HTTPError as exc:
+        if github_unauthorized(exc):
+            return expired_session_response(request, campaign_id, key, draft_fields)
         status_code = 409 if exc.response is not None and exc.response.status_code in (409, 422) else 502
         return HTMLResponse(f'<h1>GitHub write failed</h1><pre>{exc}</pre>', status_code=status_code)
     return RedirectResponse(edit_url(campaign_id, key, reference_language, review_language), status_code=303)

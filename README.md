@@ -200,3 +200,57 @@ conflicts, no invalid items, and `canonical_write_performed=false`.
 For a private organization repository, the OAuth application must be granted
 access to that organization. Otherwise authentication succeeds but campaign
 reads return HTTP 403.
+
+## Remembering the current campaign
+
+The browser remembers the last active campaign in the persistent
+`50ohm_last_campaign` cookie. Opening a campaign (including edit pages and
+error responses for a valid campaign) updates the preference before the user
+needs to log in. Logout clears the authentication session but preserves this
+separate preference.
+
+The root URL and login/logout without a campaign parameter choose:
+1. An explicitly requested active campaign, when provided.
+2. The browser's last campaign, if it still exists and is enabled.
+3. DEFAULT_CAMPAIGN, if active.
+
+An explicit invalid or disabled login URL remains a 404; a stale remembered
+campaign or logout target falls back safely. With no active campaign, the
+application displays the existing no-active-campaign page and does not start
+OAuth. The OAuth callback still validates state and rechecks that the stored
+campaign is active before returning to it.
+
+The cookie lasts one year, uses path /, HttpOnly and SameSite=Lax, and is Secure
+when SESSION_HTTPS_ONLY=true. It contains only a validated campaign identifier,
+not a GitHub token. It is a browser preference, not access authorization, and
+is local to the review-tool host. A link from the beta landing page updates it
+when the campaign is opened. Selecting a campaign overrides an older preference.
+
+Expired/revoked GitHub tokens are not renewed automatically. A GitHub 401 now
+clears authentication and offers Login while retaining the active campaign
+instead of returning to the global default. No OAuth callback, DNS or private .env changes
+are required. Rebuild and recreate question-review to deploy this code change.
+
+## Expired GitHub sessions and unsaved inputs
+
+A GitHub HTTP 401 during campaign loading, editing or saving clears only the
+authentication session and displays a reconnect page. The persistent campaign
+preference is retained. HTTP 403 and 404 do not trigger logout: permissions,
+policy restrictions or missing resources need diagnosis rather than a login loop.
+No extra token-validation request is made before normal operations.
+
+For a save with an expired/missing token, submitted editable fields (including
+comments and repeated rationales) are preserved as a copyable JSON backup on the
+reconnect page. When browser sessionStorage is available, a draft is saved locally
+for that exact campaign, question and reference/review language pair. After signing
+in, reopen that question with the same language pair to restore the inputs once.
+Current SHA fields and action buttons are never restored; no write is replayed.
+A banner asks the reviewer to check GitHub state before committing, because an
+operation may have completed before a later API call returned 401.
+
+Drafts contain review text/comments, not tokens, and remain local to that browser
+tab and review-tool origin. Closing the tab clears them. If storage is blocked,
+copy the displayed backup before leaving the reconnect page. Disabled inputs are
+not overwritten; their values remain visible in the draft backup. Restoration
+consumes the draft to avoid inserting an old comment after a successful commit.
+Draft values are encoded safely as text/JSON, not interpreted as HTML.
