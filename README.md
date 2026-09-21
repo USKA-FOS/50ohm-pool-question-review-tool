@@ -16,6 +16,18 @@ campaign files, and the generated table of contents is read-only. The canonical
 question pool is never written by the web application.
 
 ## Deployment
+
+Local development and Docker use Python 3.14. From this repository, install
+the locked dependencies and run tests without starting the service:
+
+```bash
+uv sync --locked
+uv run --locked python -m pytest -q
+```
+
+`requirements.txt` remains the Docker runtime dependency list; keep it aligned
+with `pyproject.toml` when changing runtime dependencies.
+
 Deployment is container-based and environment-specific. This branch does not
 contain an automatic Cloud Run deployment workflow. Create an environment file
 from `.env.example`, keep secrets outside Git, build the image, and run it behind
