@@ -13,10 +13,10 @@ import secrets
 import tarfile
 import threading
 import time
-from urllib.parse import quote, urlencode
+from urllib.parse import quote, urlencode, urlsplit
 import requests
 from fastapi import FastAPI, Request, Depends, Form
-from fastapi.responses import RedirectResponse, HTMLResponse
+from fastapi.responses import RedirectResponse, HTMLResponse, JSONResponse
 from fastapi.templating import Jinja2Templates
 from fastapi.staticfiles import StaticFiles
 from typing import Optional
@@ -39,6 +39,17 @@ CAMPAIGNS_JSON = os.getenv('CAMPAIGNS_JSON')
 CAMPAIGNS_FILE = os.getenv('CAMPAIGNS_FILE')
 DEFAULT_CAMPAIGN = os.getenv('DEFAULT_CAMPAIGN', 'default')
 CALLBACK_URL = os.getenv('GITHUB_CALLBACK_URL')
+URL_PREFIX = os.getenv('URL_PREFIX', '').rstrip('/')
+if URL_PREFIX and (not URL_PREFIX.startswith('/') or '//' in URL_PREFIX or '?' in URL_PREFIX or '#' in URL_PREFIX):
+    raise RuntimeError('URL_PREFIX must be an absolute URL path such as /isq/qrt.')
+
+
+def url_path(path):
+    if not path.startswith('/'):
+        raise ValueError('Application paths must start with /.')
+    return f'{URL_PREFIX}{path}'
+
+
 SESSION_SECRET = os.getenv('SESSION_SECRET')
 GITHUB_PROFILE = os.getenv('GITHUB_PROFILE', 'false').lower() == 'true'
 CAMPAIGN_REFRESH_SECONDS = max(float(os.getenv('CAMPAIGN_REFRESH_SECONDS', '30')), 0.0)
@@ -93,6 +104,8 @@ required_config = {
 missing_config = [key for key, value in required_config.items() if not value]
 if missing_config:
     raise RuntimeError(f"Missing required configuration: {', '.join(missing_config)}")
+if URL_PREFIX and urlsplit(CALLBACK_URL).path != url_path('/auth/callback'):
+    raise RuntimeError('GITHUB_CALLBACK_URL must point to URL_PREFIX/auth/callback.')
 
 
 def load_campaign_configs(raw_json, legacy_branch, default_campaign, config_file=None):
@@ -173,17 +186,25 @@ def default_active_campaign():
 def campaign_branch(campaign_id):
     return campaign_config(campaign_id)['branch']
 
-app = FastAPI()
+app = FastAPI(
+    # nginx removes URL_PREFIX before forwarding; the application adds it to links.
+    openapi_url=None if URL_PREFIX else '/openapi.json',
+    docs_url=None if URL_PREFIX else '/docs',
+    redoc_url=None if URL_PREFIX else '/redoc',
+)
 app.add_middleware(
     SessionMiddleware,
     secret_key=SESSION_SECRET,
+    session_cookie='50ohm_qrt_session' if URL_PREFIX else 'session',
     https_only=os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
     same_site='lax',
+    path=URL_PREFIX or '/',
 )
 app.mount('/static', StaticFiles(directory='static'), name='static')
 templates = Jinja2Templates(directory='templates')
 STATIC_VERSION = hashlib.sha256(Path('static/style.css').read_bytes()).hexdigest()[:12]
 templates.env.globals['static_version'] = STATIC_VERSION
+templates.env.globals['url_prefix'] = URL_PREFIX
 
 
 def record_github_profile(operation, resource, duration_ms, status):
@@ -932,7 +953,7 @@ def meta_with_status(meta, question_id, language, status):
 
 
 def campaign_url(campaign_id):
-    return f'/campaign/{quote(campaign_id, safe="")}/'
+    return url_path(f'/campaign/{quote(campaign_id, safe="")}/')
 
 
 def edit_url(campaign_id, key, reference_language, review_language):
@@ -1081,6 +1102,7 @@ def requested_languages(request, manifest):
 def remember_review_preferences(response, reference_language, review_language, last_question=None):
     cookie_options = {
         'max_age': PREFERENCE_COOKIE_MAX_AGE,
+        'path': URL_PREFIX or '/',
         'httponly': True,
         'samesite': 'lax',
         'secure': os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
@@ -1129,7 +1151,7 @@ def expired_session_response(request, campaign_id, key=None, fields=None):
     draft_campaign_id = campaign_id
     request.session.clear()
     campaign_id = preferred_campaign(request, campaign_id)
-    login_url = '/login?' + urlencode({'campaign_id': campaign_id}) if campaign_id else '/'
+    login_url = url_path('/login') + '?' + urlencode({'campaign_id': campaign_id}) if campaign_id else url_path('/')
     draft_html = ''
     if key is not None and fields is not None:
         reference = request.query_params.get('reference_language') or request.cookies.get(REFERENCE_LANGUAGE_COOKIE, '')
@@ -1148,7 +1170,7 @@ def expired_session_response(request, campaign_id, key=None, fields=None):
             '<details open><summary>Submitted inputs (copyable backup)</summary>'
             f'<textarea readonly rows="12" aria-label="Submitted inputs">{readable}</textarea></details>'
             f'<script type="application/json" id="expired-draft">{encoded}</script>'
-            '<script src="/static/review-draft.js" defer></script>'
+            f'<script src="{url_path("/static/review-draft.js")}" defer></script>'
         )
     LOGGER.warning('GitHub session expired campaign=%s method=%s', campaign_id, request.method)
     response = HTMLResponse(
@@ -1174,19 +1196,22 @@ def remember_campaign(response, campaign_id):
     if campaign_id is not None:
         response.set_cookie(
             LAST_CAMPAIGN_COOKIE, campaign_id,
-            max_age=PREFERENCE_COOKIE_MAX_AGE, path='/',
+            max_age=PREFERENCE_COOKIE_MAX_AGE, path=URL_PREFIX or '/',
             httponly=True, samesite='lax',
             secure=os.getenv('SESSION_HTTPS_ONLY', 'true').lower() == 'true',
         )
     else:
-        response.delete_cookie(LAST_CAMPAIGN_COOKIE, path='/')
+        response.delete_cookie(LAST_CAMPAIGN_COOKIE, path=URL_PREFIX or '/')
     return response
 
 
 @app.middleware('http')
 async def remember_current_campaign(request, call_next):
     response = await call_next(request)
-    parts = request.url.path.split('/')
+    path = getattr(request, 'scope', {}).get('path', request.url.path)
+    if URL_PREFIX and path.startswith(URL_PREFIX + '/'):
+        path = path[len(URL_PREFIX):]
+    parts = path.split('/')
     if len(parts) >= 3 and parts[1] == 'campaign':
         try:
             campaign_config(parts[2])
@@ -1278,6 +1303,14 @@ def healthz():
     return {'status': 'ok'}
 
 
+@app.get('/campaigns.json')
+def public_campaigns():
+    return JSONResponse(
+        {campaign_id: config['label'] for campaign_id, config in CAMPAIGNS.items() if config['enabled']},
+        headers={'Cache-Control': 'no-store'},
+    )
+
+
 @app.get('/login')
 def login(request: Request, campaign_id: str | None = None):
     try:
@@ -1362,7 +1395,7 @@ def edit_question_redirect(request: Request, campaign_id: str):
 def edit_question(request: Request, campaign_id: str, key: str):
     token = get_token(request)
     if not token:
-        return RedirectResponse(f'/login?{urlencode({"campaign_id": campaign_id})}')
+        return RedirectResponse(f'{url_path("/login")}?{urlencode({"campaign_id": campaign_id})}')
 
     try:
         branch = campaign_branch(campaign_id)

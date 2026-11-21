@@ -1,5 +1,9 @@
 # 50ohm Pool Question Review Tool
 
+For the destination server deployment under `/isq/qrt/`, see [MIGRATION_ISQ.md](MIGRATION_ISQ.md). The repository's `docker-compose.yml` now targets that prefix on `127.0.0.1:18082`; the prior production Compose is preserved as `docker-compose.jp2s.yml`. The local development Compose remains separate.
+
+On this deployment, `GET /campaigns.json` returns only the IDs and labels of active campaigns for the static site's landing page. The response does not include campaign branch names and is not cached. Restart QRT after changing its private `campaigns.json` file.
+
 ## Overview
 This tool is part of the Swiss 50ohm platform. It reviews German, French, and
 Italian canonical question subsets through shared Git campaign branches. The

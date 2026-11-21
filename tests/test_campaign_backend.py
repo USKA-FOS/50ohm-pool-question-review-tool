@@ -19,6 +19,18 @@ import main
 
 
 class CampaignBackendTests(unittest.TestCase):
+    def test_public_campaign_catalog_only_contains_active_ids_and_labels(self) -> None:
+        configs = {
+            "active": {"branch": "private/active", "label": "Active review", "enabled": True},
+            "closed": {"branch": "private/closed", "label": "Closed review", "enabled": False},
+        }
+        with patch.object(main, "CAMPAIGNS", configs):
+            response = main.public_campaigns()
+
+        self.assertEqual(response.status_code, 200)
+        self.assertEqual(response.headers["cache-control"], "no-store")
+        self.assertEqual(response.body, b'{"active":"Active review"}')
+
     def test_campaign_configuration_supports_multiple_named_branches(self) -> None:
         configs = main.load_campaign_configs(
             '{"receiver":{"branch":"campaign/receiver","label":"Receiver review"},'
